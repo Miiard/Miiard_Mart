@@ -2,22 +2,16 @@
 
 Aplikasi katalog produk berbasis **Flutter** dengan tema warna **pastel**. Data produk diambil dari API [DummyJSON Products](https://dummyjson.com/docs/products). Aplikasi dijalankan di handphone (Android/iOS), bukan di browser.
 
-> Tugas mata kuliah **[Nama Mata Kuliah]**
-> Nama: **[Nama Lengkap]** | NIM: **[NIM]** | Kelas: **[Kelas]**
+> Tugas mata kuliah **[Praktikum Pemograman Bergerak]**
+> Nama: **[Nama Lengkap]** | NIM: **[230102095]** | Kelas: **[IF 24A]**
 
 ## Video Penjelasan dan Demo
 
-**[Tonton di YouTube](GANTI_DENGAN_LINK_YOUTUBE)**
+**[Tonton di YouTube](https://youtu.be/ITff3ohcfyM?si=B0KVQk8aHi40k1nF)**
 
 Video berisi penjelasan kode dan demo aplikasi di handphone (permission: Public).
 
-## Tampilan Aplikasi
 
-| Splash | Halaman Depan | Detail Produk | Pencarian |
-|:---:|:---:|:---:|:---:|
-| ![Splash](screenshots/splash.png) | ![Beranda](screenshots/home.png) | ![Detail](screenshots/detail.png) | ![Cari](screenshots/search.png) |
-
-*(Taruh tangkapan layar di folder `screenshots/`, atau hapus bagian ini bila tidak dipakai.)*
 
 ## Ketentuan Tugas dan Pemenuhannya
 
@@ -27,7 +21,7 @@ Video berisi penjelasan kode dan demo aplikasi di handphone (permission: Public)
 | Halaman depan menampilkan seluruh produk, tema pastel | Ya | `lib/screens/home_screen.dart` (grid semua produk, `limit=0`) |
 | Halaman detail produk, tema pastel, dibuka dari halaman depan | Ya | `lib/screens/detail_product_screen.dart` |
 | Tombol search yang berfungsi | Ya | `lib/screens/search_screen.dart` |
-| Dijalankan di handphone | Ya | Diuji di perangkat [Nama perangkat, versi OS] |
+
 
 ## Fitur
 
