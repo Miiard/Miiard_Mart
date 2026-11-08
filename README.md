@@ -1,161 +1,181 @@
 # Miiard.Mart
 
-Aplikasi katalog produk berbasis **Flutter** dengan tema warna **pastel**. Data produk diambil dari API [DummyJSON Products](https://dummyjson.com/docs/products). Aplikasi dijalankan di handphone (Android/iOS), bukan di browser.
+Aplikasi toko online berbasis **Flutter** dengan backend **PHP + MySQL** yang berjalan di **Docker**.
+Dibuat sebagai tugas mata kuliah Pemrograman Perangkat Bergerak.
 
-> Tugas mata kuliah **[Praktikum Pemograman Bergerak]**
-> Nama: **[Nama Lengkap]** | NIM: **[230102095]** | Kelas: **[IF 24A]**
+**Pembuat:** Nazhmi Putra Ardiyan (IF 24 A)
 
-## Video Penjelasan dan Demo
-
-**[Tonton di YouTube](https://youtu.be/ITff3ohcfyM?si=B0KVQk8aHi40k1nF)**
-
-Video berisi penjelasan kode dan demo aplikasi di handphone (permission: Public).
-
-
-
-## Ketentuan Tugas dan Pemenuhannya
-
-| Ketentuan | Status | Keterangan |
-|---|:---:|---|
-| Memakai API DummyJSON Products | Ya | Service di `lib/services/api_service_products.dart` |
-| Halaman depan menampilkan seluruh produk, tema pastel | Ya | `lib/screens/home_screen.dart` (grid semua produk, `limit=0`) |
-| Halaman detail produk, tema pastel, dibuka dari halaman depan | Ya | `lib/screens/detail_product_screen.dart` |
-| Tombol search yang berfungsi | Ya | `lib/screens/search_screen.dart` |
-
+---
 
 ## Fitur
 
-**Sesuai ketentuan tugas**
-- **Halaman depan:** banner, chip kategori, dan grid seluruh produk dengan foto, nama, kategori, harga setelah diskon, rating, dan badge diskon. Tarik ke bawah untuk memuat ulang.
-- **Detail produk:** foto besar, kategori, merek, status stok, harga asli dan harga diskon, rating, deskripsi, serta informasi garansi, pengiriman, dan pengembalian.
-- **Pencarian:** menyaring produk berdasarkan nama, kategori, dan merek secara langsung saat mengetik, bisa digabung dengan filter kategori. Ada tampilan khusus saat hasil kosong.
-- **Skema warna pastel:** lavender, pink, peach, mint, kuning, dan sky blue di atas latar krem.
-- **Penanganan status:** skeleton saat memuat, pesan error dengan tombol coba lagi, dan placeholder bila foto gagal dimuat.
+**Pengguna**
+- Daftar, login, dan lupa password
+- Katalog produk, pencarian, filter kategori, dan favorit
+- Detail produk, keranjang, dan checkout
+- Pembayaran dengan QRIS
+- Riwayat pesanan dan pembatalan pesanan
+- Foto profil dari galeri atau kamera
 
-**Fitur tambahan**
-- Keranjang belanja (ubah jumlah, hapus dengan Urungkan, batas stok)
-- Wishlist
-- Tambah, edit, dan hapus produk (disimulasikan oleh DummyJSON, perubahan dicatat lokal)
-- Checkout dengan pilihan alamat pengiriman
-- Pembayaran **QRIS** dan **DANA** dengan konfirmasi manual
+**Admin**
+- Tambah, edit, dan hapus produk
+- Foto produk dipilih dari galeri atau file laptop, bukan URL
+- Statistik toko, daftar pengguna, dan pengaturan role
+- Mengubah status pesanan
+
+---
 
 ## Teknologi
 
-| Kebutuhan | Package |
+| Bagian | Teknologi |
 |---|---|
-| Framework | Flutter (Dart 3) |
-| HTTP client | [`dio`](https://pub.dev/packages/dio) |
-| State management | [`provider`](https://pub.dev/packages/provider) |
-| Navigasi | [`go_router`](https://pub.dev/packages/go_router) |
-| Font | [`google_fonts`](https://pub.dev/packages/google_fonts) (Cormorant Garamond, Plus Jakarta Sans) |
-| Membuka aplikasi DANA | [`url_launcher`](https://pub.dev/packages/url_launcher) |
+| Aplikasi | Flutter, Provider, go_router, Dio, google_fonts, shared_preferences, image_picker, url_launcher |
+| Backend | PHP (REST API), JWT |
+| Database | MySQL |
+| Antrean | RabbitMQ (`worker.php`) |
+| Infrastruktur | Docker |
 
-## Endpoint API yang Dipakai
+---
 
-Base URL: `https://dummyjson.com`
+## Struktur folder
 
-| Method | Endpoint | Kegunaan |
+```
+miiard_mart/
+├── backend/htdocs/
+│   ├── index.php              # pintu masuk API
+│   ├── Rest.php               # helper respond() dan fail()
+│   ├── worker.php             # pemroses antrean RabbitMQ
+│   ├── routes/api.php         # semua rute API
+│   ├── controller/            # Product, UserAuth, Admin, Order, Upload
+│   ├── models/UserStore.php   # akses database dan pembuatan tabel
+│   └── support/               # Jwt, Guard, RabbitMq, AppSettings
+└── flutter/
+    ├── assets/images/         # logo dan QRIS
+    └── lib/
+        ├── config/            # alamat server (api_config.dart)
+        ├── models/            # Product, User, Order, CartItem
+        ├── providers/         # state aplikasi
+        ├── services/          # panggilan API
+        ├── screens/           # halaman
+        ├── widgets/           # komponen
+        ├── theme/             # warna dan teks
+        └── utils/
+```
+
+---
+
+## Cara pasang
+
+### 1. Backend
+
+1. Salin isi `backend/htdocs` ke folder `htdocs` milikmu. Pilih **Replace the files in the destination**.
+2. Nyalakan Docker (`docker compose up -d`).
+3. Buka `http://localhost:8080/health`. Kalau muncul `{"status":"ok"...}`, server sudah hidup.
+
+Semua tabel dibuat otomatis saat request pertama: `users`, `orders`, `order_items`, `product_images`, dan lainnya.
+
+> Angka port (8080) mengikuti `ports:` pada `docker-compose.yml` milikmu. Sesuaikan kalau berbeda.
+
+**Akun admin pertama**
+
+```
+email    : admin@miiard.mart
+password : Admin123!
+```
+
+Ganti password ini sebelum aplikasi dipakai di luar keperluan tugas.
+
+### 2. Flutter
+
+1. Ganti folder `lib/` dan `assets/` proyek Flutter-mu dengan yang ada di `flutter/`.
+2. Pastikan `pubspec.yaml` berisi:
+
+```yaml
+dependencies:
+  provider: ^6.1.2
+  go_router: ^14.0.0
+  dio: ^5.4.0
+  google_fonts: ^6.2.1
+  url_launcher: ^6.3.0
+  shared_preferences: ^2.2.3
+  image_picker: ^1.0.7
+
+flutter:
+  assets:
+    - assets/images/
+```
+
+3. Jalankan `flutter pub get`.
+4. Khusus iOS, tambahkan di `ios/Runner/Info.plist`:
+   - `NSPhotoLibraryUsageDescription`: "Pilih foto"
+   - `NSCameraUsageDescription`: "Ambil foto"
+
+---
+
+## Menjalankan aplikasi
+
+Alamat server diatur lewat `--dart-define=API_URL=...`, tanpa mengedit kode.
+
+| Dijalankan di | Perintah |
+|---|---|
+| Emulator Android | `flutter run` (bawaan `http://10.0.2.2:8080`) |
+| Chrome | `flutter run -d chrome --dart-define=API_URL=http://localhost:8080` |
+| Windows | `flutter run -d windows --dart-define=API_URL=http://localhost:8080` |
+| HP asli (satu Wi-Fi) | `flutter run --dart-define=API_URL=http://IP_LAPTOP:8080` |
+
+---
+
+## Foto produk dari galeri
+
+Di halaman Tambah atau Edit Produk, ketuk kotak foto atau tombol **Pilih dari galeri**.
+
+- Format JPG, PNG, atau WEBP, maksimal 5 MB.
+- Foto diunggah saat tombol Simpan atau Perbarui ditekan, lalu disimpan di MySQL (tabel `product_images`).
+- Di Windows, macOS, Linux, dan Chrome, yang terbuka adalah dialog file laptop.
+- Di emulator Android, yang terbuka adalah galeri emulator. Seret fotonya dari laptop ke jendela emulator lebih dulu.
+
+---
+
+## Daftar endpoint
+
+| Metode | Rute | Keterangan |
 |---|---|---|
-| GET | `/products?limit=0` | Seluruh produk untuk halaman depan |
-| GET | `/products/{id}` | Detail satu produk |
-| GET | `/products/search?q=` | Tersedia di service untuk pencarian lewat API |
-| GET | `/products/category-list` | Daftar kategori (form tambah/edit) |
-| GET | `/products/category/{slug}` | Produk per kategori |
-| POST | `/products/add` | Menambah produk (simulasi) |
-| PUT | `/products/{id}` | Mengubah produk (simulasi) |
-| DELETE | `/products/{id}` | Menghapus produk (simulasi) |
+| POST | `/auth/register`, `/auth/login` | Daftar dan login |
+| GET / PUT | `/auth/me` | Data akun |
+| PUT / DELETE | `/auth/avatar` | Foto profil |
+| POST | `/auth/forgot`, `/auth/reset` | Lupa password |
+| GET | `/products`, `/products/{id}`, `/products/search` | Katalog dan pencarian |
+| GET | `/products/categories`, `/products/category-list` | Kategori |
+| POST / PUT / DELETE | `/products`, `/products/{id}` | Kelola produk (admin) |
+| POST | `/uploads/product` | Unggah foto produk (admin) |
+| GET | `/uploads/product/{id}` | Menampilkan foto produk |
+| POST / GET | `/orders`, `/orders/{id}` | Checkout dan riwayat |
+| POST | `/orders/{id}/cancel` | Batalkan pesanan |
+| GET | `/admin/stats`, `/admin/users`, `/admin/orders` | Data admin |
+| PATCH | `/admin/users/{id}`, `/admin/orders/{id}` | Ubah role dan status pesanan |
 
-Catatan: DummyJSON hanya mensimulasikan POST, PUT, dan DELETE tanpa menyimpannya di server. Karena itu perubahan dicatat di sisi aplikasi (`ProductProvider`) agar tetap terlihat.
-Pencarian di aplikasi menyaring seluruh data yang sudah dimuat di perangkat, sehingga hasilnya muncul seketika tanpa menunggu jaringan.
+---
 
-## Struktur Proyek
+## Pemecahan masalah
 
-```
-lib/
-├── main.dart                    # Provider, tema, dan rute (go_router)
-├── config/
-│   └── payment_config.dart      # Nomor DANA, kurs USD-IDR, batas waktu bayar
-├── models/
-│   ├── product_model.dart       # Product, Review, Category, fromJson
-│   ├── cart_item.dart
-│   ├── address.dart
-│   ├── payment_method.dart
-│   └── user_profile.dart
-├── services/
-│   ├── api_service_products.dart  # Pemanggilan API dengan dio
-│   └── product_service.dart
-├── providers/
-│   ├── product_provider.dart    # Daftar produk, loading, error, filter, favorit
-│   ├── cart_provider.dart       # Keranjang dan checkout
-│   └── checkout_provider.dart   # Alamat dan metode pembayaran
-├── screens/
-│   ├── splash_screen.dart
-│   ├── shell_screen.dart        # Header dan navigasi bawah
-│   ├── home_screen.dart         # Halaman depan
-│   ├── search_screen.dart       # Pencarian
-│   ├── detail_product_screen.dart
-│   ├── cart_screen.dart
-│   ├── checkout_screen.dart
-│   ├── payment_screen.dart
-│   ├── wishlist_screen.dart
-│   ├── profile_screen.dart
-│   ├── add_product_screen.dart
-│   └── edit_product_screen.dart
-├── theme/
-│   ├── app_colors.dart          # Palet pastel
-│   └── app_text.dart            # Gaya teks
-└── widgets/                     # Komponen UI yang dipakai ulang
-assets/images/                   # Logo, latar splash, gambar QRIS
-```
+**"Gagal menambahkan produk. Server belum terhubung..."**
+Aplikasi tidak bisa menghubungi server dan beralih ke data cadangan dummyjson yang hanya bisa dibaca.
+1. Pastikan Docker menyala dan `http://localhost:8080/health` terbuka di browser.
+2. Jalankan aplikasi dengan `API_URL` yang sesuai (lihat tabel di atas).
+3. Tarik layar beranda ke bawah untuk memuat ulang.
 
-## Alur Data
+**Foto produk tidak muncul**
+Cek bahwa server hidup dan `API_URL` benar. Alamat foto otomatis mengikuti `API_URL` yang sedang dipakai.
 
-```
-DummyJSON API
-     │  dio (GET /products?limit=0)
-     ▼
-ApiServiceProducts ──► Product.fromJson ──► ProductProvider (state)
-                                               │ notifyListeners
-                                               ▼
-                           HomeScreen / SearchScreen / DetailProductScreen
-```
+**Gagal unggah foto**
+Biasanya ukuran lebih dari 5 MB atau formatnya bukan JPG, PNG, atau WEBP. Akun yang dipakai juga harus berrole admin.
 
-## Cara Menjalankan
+**`flutter pub get` meminta Developer Mode (Windows)**
+Aktifkan Developer Mode di Pengaturan Windows, lalu ulangi.
 
-**Prasyarat:** Flutter SDK 3.27 atau lebih baru, dan handphone dengan USB debugging aktif (atau emulator).
+---
 
-```bash
-git clone https://github.com/[username]/[nama-repo].git
-cd [nama-repo]
-flutter pub get
-flutter devices          # pastikan HP terdeteksi
-flutter run
-```
+## Catatan
 
-Aplikasi membutuhkan koneksi internet untuk memuat data produk dan font.
-
-### Pengaturan pembayaran (opsional)
-
-Buka `lib/config/payment_config.dart`, lalu isi:
-- `danaNumber` dan `danaAccountName` dengan akun DANA penerima
-- `usdToIdr` bila ingin mengubah kurs (harga dari API dalam dolar)
-
-Gambar QRIS toko ada di `assets/images/qris.png`.
-
-**Catatan pembayaran:** QRIS bersifat statis, jadi pembeli mengetik nominal sendiri, dan ditambahkan kode unik 3 digit untuk mempermudah pencocokan. Aplikasi ini belum memverifikasi pembayaran secara otomatis; tombol "Saya sudah bayar" hanya konfirmasi dari pembeli. Verifikasi otomatis memerlukan payment gateway dan server.
-
-## Keterbatasan
-
-- Keranjang, wishlist, dan alamat disimpan di memori, sehingga hilang saat aplikasi ditutup.
-- Perubahan produk (tambah, edit, hapus) hanya simulasi dan tidak permanen di server.
-- Data pengguna di halaman Profil adalah contoh tetap.
-
-## Penggunaan AI
-
-[Isi sesuai kenyataan pengerjaanmu, misalnya: "Bantuan AI hanya digunakan untuk bagian tampilan (UI) sesuai ketentuan tugas. Logika (model, service, provider, dan pencarian) dikerjakan secara manual."]
-
-## Referensi
-
-- [DummyJSON Products](https://dummyjson.com/docs/products)
-- [Referensi palet pastel (Vecteezy)](https://www.vecteezy.com/vector-art/27338494-collection-of-pastel-color-palette)
-- [Dokumentasi Flutter](https://docs.flutter.dev)
+- Data produk bawaan berasal dari [dummyjson.com](https://dummyjson.com) dan dipakai sebagai cadangan baca-saja.
+- Harga ditampilkan dalam dolar (`$`).
