@@ -1,24 +1,16 @@
-// Mengimpor pustaka utama material design dari Flutter
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-// Mengimpor paket provider untuk mengakses state management
 import 'package:provider/provider.dart';
 
-// Mengimpor state provider produk
+import '../models/product_model.dart';
 import '../providers/product_provider.dart';
-// Mengimpor konfigurasi warna kustom aplikasi
 import '../theme/app_colors.dart';
-// Mengimpor konfigurasi gaya teks aplikasi
 import '../theme/app_text.dart';
-// Mengimpor widget kategori pilihan (chips)
-import '../widgets/category_chips.dart';
-// Mengimpor widget grid produk
 import '../widgets/product_grid.dart';
-// Mengimpor widget animasi kemunculan (reveal)
 import '../widgets/reveal.dart';
-// Mengimpor kumpulan widget UI kit tambahan
-import '../widgets/ui_kit.dart';
 
-// Kelas SearchScreen berupa StatefulWidget untuk mengelola halaman pencarian produk
+/// Pencarian fungsional: mengetik → tunggu 400 ms → panggil API /products/search.
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -27,159 +19,207 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  late final TextEditingController _ctrl; // Controller untuk mengontrol teks pada input pencarian
-  final FocusNode _focus = FocusNode();   // FocusNode untuk memantau status fokus pada input pencarian
+  late final TextEditingController _ctrl;
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
-    // Menginisialisasi controller teks dengan query filter yang sedang aktif dari provider
-    _ctrl = TextEditingController(text: context.read<ProductProvider>().filterQuery);
-    // Menambahkan listener untuk memperbarui state saat fokus input berubah
-    _focus.addListener(() => setState(() {}));
+    _ctrl = TextEditingController(text: context.read<ProductProvider>().query);
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();  // Membersihkan controller teks
-    _focus.dispose(); // Membersihkan focus node
+    _debounce?.cancel();
+    _ctrl.dispose();
     super.dispose();
   }
 
-  // Fungsi untuk menghapus teks pencarian dan mereset filter produk
+  void _onChanged(String v) {
+    setState(() {});
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) context.read<ProductProvider>().search(v);
+    });
+  }
+
   void _clear() {
     _ctrl.clear();
-    final prov = context.read<ProductProvider>();
-    prov.resetFilters();
-    _focus.requestFocus(); // Mengembalikan fokus ke input pencarian
+    _debounce?.cancel();
+    context.read<ProductProvider>().search('');
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<ProductProvider>();
-    final list = prov.filteredProducts(); // Mendapatkan daftar produk yang sudah difilter
-    final q = prov.filterQuery.trim();    // Mengambil teks query pencarian yang sudah dibersihkan spasi
-    final focused = _focus.hasFocus;      // Mengecek apakah input pencarian sedang aktif/fokus
-    final kb = MediaQuery.viewInsetsOf(context).bottom; // Mendapatkan tinggi keyboard untuk padding dinamis
+    final results = prov.searchResults;
+    final bottomPad = 110 + MediaQuery.of(context).padding.bottom;
+    final hasQuery = prov.query.isNotEmpty;
 
     return CustomScrollView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, // Menutup keyboard saat digeser
-      physics: const AlwaysScrollableScrollPhysics(),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       slivers: [
-        // Bagian Header dan Input Kolom Pencarian
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
           sliver: SliverToBoxAdapter(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Reveal(child: Text('Cari produk', style: AppText.serif(size: 30))),
+                const SizedBox(height: 12),
                 Reveal(
-                  child: Text.rich(
-                    TextSpan(children: [
-                      const TextSpan(text: 'Cari Produk '),
-                      TextSpan(
-                        text: 'Impianmu',
-                        style: AppText.serif(30,
-                            w: FontWeight.w600,
-                            style: FontStyle.italic,
-                            color: AppColors.purpleText,
-                            height: 1.05),
-                      ),
-                    ]),
-                    style: AppText.serif(30, w: FontWeight.w600, height: 1.05),
+                  delayMs: 100,
+                  child: Container(
+                    height: 54,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(27),
+                      boxShadow: AppColors.softShadow,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.search_rounded, color: AppColors.inkSoft),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _ctrl,
+                            onChanged: _onChanged,
+                            textInputAction: TextInputAction.search,
+                            onSubmitted: (v) {
+                              _debounce?.cancel();
+                              context.read<ProductProvider>().search(v);
+                            },
+                            style: AppText.sans(size: 14.5, weight: FontWeight.w600),
+                            cursorColor: AppColors.ink,
+                            decoration: InputDecoration(
+                              border: InputBorder.none,
+                              hintText: 'Cari parfum, laptop, sepatu…',
+                              hintStyle: AppText.sans(size: 14, color: AppColors.inkFaint),
+                            ),
+                          ),
+                        ),
+                        if (_ctrl.text.isNotEmpty)
+                          GestureDetector(
+                            onTap: _clear,
+                            child: const Icon(Icons.close_rounded, color: AppColors.inkSoft),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
-                Reveal(
-                  delay: const Duration(milliseconds: 75),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: focused ? AppColors.accent : Colors.transparent, // Warna border berubah saat fokus
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        if (focused)
-                          const BoxShadow(color: Color(0x47C9B8F2), spreadRadius: 5), // Efek bayangan saat fokus
-                        ...AppColors.softShadow,
-                      ],
-                    ),
-                    child: TextField(
-                      controller: _ctrl,
-                      focusNode: _focus,
-                      textInputAction: TextInputAction.search,
-                      cursorColor: AppColors.ink,
-                      style: AppText.sans(13, w: FontWeight.w600),
-                      onChanged: (v) => prov.setFilterQuery(v), // Memperbarui query pencarian di provider saat teks berubah
-                      decoration: InputDecoration(
-                        hintText: 'Cari nama produk, kategori, merek...',
-                        hintStyle: AppText.sans(13, color: AppColors.ink3),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 15),
-                        prefixIcon: const Icon(Icons.search_rounded, size: 20, color: AppColors.ink3),
-                        // Tombol silang (clear) hanya muncul jika teks pencarian tidak kosong
-                        suffixIcon: _ctrl.text.isEmpty
-                            ? null
-                            : Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Pressable(
-                                  onTap: _clear,
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.lavender,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.close_rounded,
-                                        size: 14, color: AppColors.ink),
-                                  ),
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
               ],
             ),
           ),
         ),
-        // Bagian Deretan Chip Kategori
-        const SliverToBoxAdapter(child: CategoryChips()),
-        // Bagian Informasi Jumlah Hasil Pencarian
+        SliverToBoxAdapter(child: _chips(prov)),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
           sliver: SliverToBoxAdapter(
-            child: Text(
-              q.isEmpty ? '${list.length} produk' : '${list.length} hasil untuk "$q"',
-              style: AppText.sans(12, w: FontWeight.w600, color: AppColors.ink3),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    hasQuery ? 'Hasil untuk "${prov.query}"' : 'Semua produk',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.sans(size: 14, weight: FontWeight.w800),
+                  ),
+                ),
+                if (prov.searching)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ink),
+                  )
+                else
+                  Text(
+                    '${results.length} produk',
+                    style: AppText.sans(size: 12, color: AppColors.inkSoft),
+                  ),
+              ],
             ),
           ),
         ),
-        // Pengkondisian tampilan berdasarkan status data (Loading, Kosong, atau Menampilkan Grid Produk)
-        if (prov.loading && prov.allProducts.isEmpty)
-          const SliverPadding(
-            padding: EdgeInsets.fromLTRB(18, 0, 18, 26),
-            sliver: SliverSkeletonGrid(), // Menampilkan kerangka loading (skeleton)
-          )
-        else if (list.isEmpty)
-          SliverToBoxAdapter(
-            child: EmptyState(
-              icon: Icons.search_rounded,
-              title: 'Produk tidak ditemukan',
-              text: 'Coba kata kunci lain atau pilih kategori yang berbeda.',
-              buttonLabel: 'Reset pencarian',
-              onButton: _clear,
+        if (results.isEmpty && !prov.searching)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Reveal(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 84,
+                      height: 84,
+                      decoration: const BoxDecoration(
+                        color: AppColors.rose,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.search_off_rounded, size: 38, color: AppColors.ink),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Tidak ditemukan', style: AppText.serif(size: 24)),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Coba kata kunci lain atau ganti kategori.',
+                      textAlign: TextAlign.center,
+                      style: AppText.sans(color: AppColors.inkSoft),
+                    ),
+                  ],
+                ),
+              ),
             ),
           )
         else
           SliverPadding(
-            padding: EdgeInsets.fromLTRB(18, 0, 18, 26 + kb), // Padding bawah otomatis menyesuaikan tinggi keyboard
-            sliver: SliverProductGrid(products: list),         // Menampilkan grid produk hasil pencarian
+            padding: EdgeInsets.fromLTRB(20, 0, 20, bottomPad),
+            sliver: SliverProductGrid(
+              key: ValueKey('${prov.query}-${prov.searchCategory}'),
+              products: results,
+            ),
           ),
       ],
+    );
+  }
+
+  Widget _chips(ProductProvider prov) {
+    final items = <String?>[null, ...prov.categories];
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final slug = items[i];
+          final selected = prov.searchCategory == slug;
+          return Pressable(
+            onTap: () => prov.selectSearchCategory(slug),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 260),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? AppColors.ink : AppColors.lavender,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                slug == null ? 'Semua' : categoryLabel(slug),
+                style: AppText.sans(
+                  size: 12,
+                  weight: FontWeight.w800,
+                  color: selected ? Colors.white : AppColors.ink,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

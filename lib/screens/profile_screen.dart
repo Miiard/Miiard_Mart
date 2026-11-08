@@ -1,196 +1,353 @@
-// Mengimpor pustaka matematika Dart (alias math) untuk perhitungan geometri (lingkaran/sudut)
 import 'dart:math' as math;
 
-// Mengimpor pustaka utama material design dari Flutter
 import 'package:flutter/material.dart';
-// Mengimpor paket go_router untuk manajemen navigasi halaman
 import 'package:go_router/go_router.dart';
-// Mengimpor paket provider untuk mengakses state management
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-// Mengimpor model data profil pengguna
-import '../models/user_profile.dart';
-// Mengimpor state provider keranjang belanja
+import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
-// Mengimpor state provider produk
+import '../providers/order_provider.dart';
+import '../providers/nav_provider.dart';
 import '../providers/product_provider.dart';
-// Mengimpor konfigurasi warna kustom aplikasi
 import '../theme/app_colors.dart';
-// Mengimpor konfigurasi gaya teks aplikasi
 import '../theme/app_text.dart';
-// Mengimpor widget kustom untuk notifikasi toast
+import '../models/user_model.dart';
 import '../widgets/app_toast.dart';
-// Mengimpor widget animasi kemunculan (reveal)
+import '../widgets/brand_mark.dart';
 import '../widgets/reveal.dart';
-// Mengimpor kumpulan widget UI kit tambahan
-import '../widgets/ui_kit.dart';
 
-// Kelas ProfileScreen berupa StatelessWidget untuk menampilkan halaman profil pengguna
+/// Profil: avatar dengan cincin putus-putus berputar, statistik berhitung naik, menu.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Memantau data statistik pesanan, jumlah item di keranjang, dan total produk favorit via provider
-    final orders = context.select<CartProvider, int>((c) => c.orders);
+    final orders = context.select<OrderProvider, int>((o) => o.activeCount);
     final inCart = context.select<CartProvider, int>((c) => c.totalQuantity);
     final favs = context.select<ProductProvider, int>((p) => p.favoritesCount);
-
-    // Fungsi helper lokal untuk menampilkan toast notifikasi fitur yang segera hadir
-    void soon(String name) => showAppToast(
-          context,
-          message: '$name segera hadir',
-          icon: Icons.auto_awesome_rounded,
-          duration: const Duration(milliseconds: 1700),
-        );
-
-    // Daftar menu opsi navigasi pada halaman profil beserta ikon, warna latar, dan aksi ketuknya
-    final menu = <(IconData, String, Color, VoidCallback)>[
-      (Icons.inventory_2_outlined, 'Pesanan Saya', AppColors.lavender, () => soon('Pesanan Saya')),
-      (Icons.favorite_border_rounded, 'Wishlist Favorit', AppColors.pink, () => context.push('/wishlist')),
-      (Icons.place_outlined, 'Alamat Pengiriman', AppColors.mint, () => soon('Alamat Pengiriman')),
-      (Icons.tune_rounded, 'Pengaturan Akun', AppColors.yellow, () => soon('Pengaturan Akun')),
-      (Icons.add_box_outlined, 'Tambah Produk', AppColors.peach, () => context.push('/add')),
-    ];
+    final bottomPad = 120 + MediaQuery.of(context).padding.bottom;
+    final user = context.select<AuthProvider, AppUser?>((a) => a.user);
+    final isAdmin = user?.isAdmin ?? false;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 24, 18, 26),
+      padding: EdgeInsets.fromLTRB(20, 8, 20, bottomPad),
       children: [
-        // Bagian Informasi Header Profil (Avatar, Nama, dan Email Pengguna)
         Reveal(
+          fromScale: 0.9,
+          child: Center(
+            child: _Avatar(
+              initial: user?.initial ?? 'M',
+              imageUrl: user?.avatarFullUrl,
+              onTap: () => _pickAvatar(context, hasPhoto: user?.avatarUrl != null),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Reveal(
+          delayMs: 120,
           child: Column(
             children: [
-              const _Avatar(),
-              const SizedBox(height: 14),
-              Text(kUser.name, style: AppText.serif(26, height: 1.1)),
-              const SizedBox(height: 3),
-              Text(kUser.email, style: AppText.sans(13, color: AppColors.inkSoft)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        // Bagian Kartu Statistik Ringkasan (Pesanan, Favorit, Keranjang)
-        Reveal(
-          delay: const Duration(milliseconds: 75),
-          child: Row(
-            children: [
-              Expanded(child: _Stat(value: orders, label: 'Pesanan', color: AppColors.peach)),
-              const SizedBox(width: 9),
-              Expanded(child: _Stat(value: favs, label: 'Favorit', color: AppColors.pink)),
-              const SizedBox(width: 9),
-              Expanded(child: _Stat(value: inCart, label: 'Keranjang', color: AppColors.mint)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        // Bagian Daftar Menu Navigasi Profil
-        Reveal(
-          delay: const Duration(milliseconds: 150),
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(26),
-              boxShadow: AppColors.softShadow,
-            ),
-            child: Column(
-              children: [
-                for (final m in menu)
-                  Pressable(
-                    onTap: m.$4,
-                    scale: .98,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 34,
-                            height: 34,
-                            decoration: BoxDecoration(
-                              color: m.$3,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(m.$1, size: 17, color: AppColors.ink),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(child: Text(m.$2, style: AppText.sans(12.5, w: FontWeight.w700))),
-                          const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.ink3),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        // Bagian Logo Gambar di bagian bawah halaman profil
-        Reveal(
-          delay: const Duration(milliseconds: 225),
-          child: Padding(
-            padding: const EdgeInsets.only(top: 18),
-            child: Center(
-              child: Opacity(
-                opacity: .9,
-                child: SizedBox(
-                  width: 170,
-                  child: AspectRatio(
-                    aspectRatio: 491 / 466,
-                    child: Image.asset('assets/images/logo.webp', fit: BoxFit.contain),
-                  ),
+              Text(user?.name ?? 'Tamu', style: AppText.serif(size: 32)),
+              Text(
+                user?.email ?? '',
+                style: AppText.sans(size: 12.5, color: AppColors.inkSoft),
+              ),
+              const SizedBox(height: 8),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.lavender,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  isAdmin ? 'ADMIN MIIARD' : 'MEMBER MIIARD',
+                  style: AppText.sans(size: 10.5, weight: FontWeight.w800, letterSpacing: 1.4),
                 ),
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        Reveal(
+          delayMs: 220,
+          child: Row(
+            children: [
+              Expanded(child: _stat(orders, 'Pesanan', AppColors.peach)),
+              const SizedBox(width: 10),
+              Expanded(child: _stat(favs, 'Wishlist', AppColors.rose)),
+              const SizedBox(width: 10),
+              Expanded(child: _stat(inCart, 'Keranjang', AppColors.mint)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        Reveal(
+          delayMs: 320,
+          child: _menu(
+            context,
+            Icons.favorite_rounded,
+            'Wishlist saya',
+            AppColors.rose,
+            () => context.push('/wishlist'),
+          ),
+        ),
+        if (isAdmin)
+          Reveal(
+            delayMs: 380,
+            child: _menu(
+              context,
+              Icons.admin_panel_settings_rounded,
+              'Panel admin (produk & pengguna)',
+              AppColors.mint,
+              () => context.push('/admin'),
             ),
+          ),
+        Reveal(
+          delayMs: 440,
+          child: _menu(
+            context,
+            Icons.local_shipping_rounded,
+            'Pesanan saya',
+            AppColors.peach,
+            () => context.push('/orders'),
+          ),
+        ),
+        Reveal(
+          delayMs: 500,
+          child: _menu(
+            context,
+            Icons.help_outline_rounded,
+            'Bantuan',
+            AppColors.sky,
+            () => showAppToast(
+              context,
+              message: 'Hai ${user?.firstName ?? 'teman'} 👋',
+              subtitle: 'Tim Miiard siap membantu kapan saja',
+              icon: Icons.chat_bubble_outline_rounded,
+              color: AppColors.sky,
+            ),
+          ),
+        ),
+        Reveal(
+          delayMs: 540,
+          child: _menu(
+            context,
+            Icons.logout_rounded,
+            'Keluar',
+            AppColors.rose,
+            () => _logout(context),
+          ),
+        ),
+        const SizedBox(height: 26),
+        Reveal(
+          delayMs: 600,
+          child: Column(
+            children: [
+              const BrandMark(size: 52),
+              const SizedBox(height: 8),
+              Text('MIIARD.MART', style: AppText.serif(size: 18, letterSpacing: 1.6)),
+              Text(
+                'Versi 1.0',
+                style: AppText.sans(size: 11, color: AppColors.inkFaint),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
-}
 
-// Widget privat _Stat untuk menampilkan kotak kartu statistik angka dengan animasi
-class _Stat extends StatelessWidget {
-  final int value;
-  final String label;
-  final Color color;
-  const _Stat({required this.value, required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 6),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: AppColors.softShadow,
-      ),
-      child: Column(
-        children: [
-          TweenAnimationBuilder<int>(
-            tween: IntTween(begin: 0, end: value),
-            duration: const Duration(milliseconds: 800),
-            curve: Curves.easeOutCubic,
-            builder: (context, v, _) => Text('$v', style: AppText.serif(26, height: 1)),
+  Future<void> _pickAvatar(BuildContext context, {required bool hasPhoto}) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        Widget item(IconData icon, String label, String value, Color bg) => ListTile(
+              leading: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+                child: Icon(icon, color: AppColors.ink, size: 21),
+              ),
+              title: Text(label, style: AppText.sans(size: 14, weight: FontWeight.w700)),
+              onTap: () => Navigator.pop(ctx, value),
+            );
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
-          const SizedBox(height: 2),
-          Text(label, style: AppText.sans(10.5, w: FontWeight.w700, color: AppColors.inkSoft)),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(color: AppColors.lavender, borderRadius: BorderRadius.circular(3)),
+                  ),
+                  item(Icons.photo_library_rounded, 'Pilih dari galeri', 'gallery', AppColors.lavender),
+                  item(Icons.photo_camera_rounded, 'Ambil foto', 'camera', AppColors.mint),
+                  if (hasPhoto) item(Icons.delete_outline_rounded, 'Hapus foto', 'remove', AppColors.rose),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (choice == null || !context.mounted) return;
+
+    final auth = context.read<AuthProvider>();
+    String? error;
+    if (choice == 'remove') {
+      error = await auth.removeAvatar();
+    } else {
+      final XFile? file;
+      try {
+        file = await ImagePicker().pickImage(
+          source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+          maxWidth: 640,
+          maxHeight: 640,
+          imageQuality: 82,
+        );
+      } catch (_) {
+        if (!context.mounted) return;
+        showAppToast(
+          context,
+          message: 'Tidak bisa membuka ${choice == 'camera' ? 'kamera' : 'galeri'}',
+          subtitle: 'Periksa izin aplikasi di pengaturan HP',
+          icon: Icons.error_outline_rounded,
+          color: AppColors.rose,
+        );
+        return;
+      }
+      if (file == null) return; // dibatalkan
+      error = await auth.changeAvatar(await file.readAsBytes());
+    }
+    if (!context.mounted) return;
+    showAppToast(
+      context,
+      message: error == null ? (choice == 'remove' ? 'Foto dihapus' : 'Foto profil diperbarui') : 'Gagal mengubah foto',
+      subtitle: error,
+      icon: error == null ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+      color: error == null ? AppColors.mint : AppColors.rose,
+    );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        title: Text('Keluar dari akun?', style: AppText.sans(size: 17, weight: FontWeight.w800)),
+        content: Text(
+          'Keranjangmu akan dikosongkan.',
+          style: AppText.sans(color: AppColors.inkSoft),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal', style: TextStyle(color: AppColors.ink)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Keluar'),
+          ),
         ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final auth = context.read<AuthProvider>();
+    context.read<CartProvider>().clear();
+    context.read<OrderProvider>().clear();
+    context.read<NavProvider>().go(0);
+    await auth.logout(); // router otomatis kembali ke halaman login
+  }
+
+  Widget _stat(int value, String label, Color bg) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(24)),
+        child: Column(
+          children: [
+            CountUpText(
+              value: value.toDouble(),
+              format: (v) => v.round().toString(),
+              style: AppText.serif(size: 30),
+            ),
+            Text(label, style: AppText.sans(size: 11.5, weight: FontWeight.w700)),
+          ],
+        ),
+      );
+
+  Widget _menu(
+    BuildContext context,
+    IconData icon,
+    String label,
+    Color bg,
+    VoidCallback onTap,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Pressable(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: AppColors.softShadow,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(15)),
+                child: Icon(icon, color: AppColors.ink, size: 21),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(label, style: AppText.sans(size: 14, weight: FontWeight.w700)),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.inkFaint),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-// Widget privat _Avatar untuk menampilkan foto profil/avatar dengan efek lingkaran putus-putus berputar
 class _Avatar extends StatefulWidget {
-  const _Avatar();
+  final String initial;
+  final String? imageUrl;
+  final VoidCallback onTap;
+  const _Avatar({required this.initial, this.imageUrl, required this.onTap});
 
   @override
   State<_Avatar> createState() => _AvatarState();
 }
 
 class _AvatarState extends State<_Avatar> with SingleTickerProviderStateMixin {
-  // Controller animasi putar lambat untuk lingkaran putus-putus (durasi 26 detik)
   late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(seconds: 26))..repeat();
+      AnimationController(vsync: this, duration: const Duration(seconds: 14));
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (!MediaQuery.of(context).disableAnimations) _c.repeat();
+  }
 
   @override
   void dispose() {
@@ -201,31 +358,56 @@ class _AvatarState extends State<_Avatar> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 110,
-      height: 110,
+      width: 132,
+      height: 132,
       child: Stack(
         alignment: Alignment.center,
         children: [
           RotationTransition(
             turns: _c,
-            child: CustomPaint(size: const Size(110, 110), painter: _DashedCircle()),
+            child: CustomPaint(
+              size: const Size(132, 132),
+              painter: _DashedRing(),
+            ),
           ),
-          Container(
-            width: 96,
-            height: 96,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: AppColors.shadow,
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFFFD6C0), Color(0xFFE5D6FB), Color(0xFFC8EEE1)],
-                stops: [0, .55, 1],
+          Pressable(
+            scale: 0.95,
+            onTap: widget.onTap,
+            child: Container(
+              width: 104,
+              height: 104,
+              clipBehavior: Clip.antiAlias,
+              decoration: const BoxDecoration(
+                gradient: AppColors.heroGradient,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: widget.imageUrl == null
+                  ? Text(widget.initial, style: AppText.serif(size: 54))
+                  : Image.network(
+                      widget.imageUrl!,
+                      width: 104,
+                      height: 104,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Text(widget.initial, style: AppText.serif(size: 54)),
+                    ),
+            ),
+          ),
+          Positioned(
+            right: 12,
+            bottom: 12,
+            child: IgnorePointer(
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: AppColors.softShadow,
+                ),
+                child: const Icon(Icons.photo_camera_rounded, size: 17, color: AppColors.ink),
               ),
             ),
-            // Menampilkan huruf pertama dari nama depan pengguna di dalam avatar
-            child: Text(kUser.firstName.substring(0, 1), style: AppText.serif(40)),
           ),
         ],
       ),
@@ -233,28 +415,23 @@ class _AvatarState extends State<_Avatar> with SingleTickerProviderStateMixin {
   }
 }
 
-// CustomPainter (_DashedCircle) untuk menggambar garis lingkaran putus-putus di sekeliling avatar
-class _DashedCircle extends CustomPainter {
+class _DashedRing extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final r = size.width / 2 - 3;
     final paint = Paint()
+      ..color = AppColors.lav2
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = const Color(0xB3A98AE0);
-    final r = size.width / 2 - 1;
-    const dashes = 36;
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    const dashes = 28;
+    const sweep = 2 * math.pi / dashes;
     for (var i = 0; i < dashes; i++) {
-      final a = i * 2 * math.pi / dashes;
-      canvas.drawArc(
-        Rect.fromCircle(center: size.center(Offset.zero), radius: r),
-        a,
-        math.pi / dashes,
-        false,
-        paint,
-      );
+      canvas.drawArc(Rect.fromCircle(center: c, radius: r), i * sweep, sweep * 0.55, false, paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

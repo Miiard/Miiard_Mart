@@ -1,153 +1,242 @@
-// Mengimpor FontFeature dari pustaka dart:ui untuk fitur tipografi (seperti angka tabular)
-import 'dart:ui' show FontFeature;
-
-// Mengimpor pustaka utama material design dari Flutter
 import 'package:flutter/material.dart';
-// Mengimpor paket go_router untuk manajemen navigasi halaman
 import 'package:go_router/go_router.dart';
-// Mengimpor paket provider untuk mendengarkan perubahan state dari state management
 import 'package:provider/provider.dart';
 
-// Mengimpor model data item keranjang belanja
 import '../models/cart_item.dart';
-// Mengimpor model data profil pengguna
-import '../models/user_profile.dart';
-// Mengimpor state provider keranjang belanja
 import '../providers/cart_provider.dart';
-// Mengimpor definisi warna kustom aplikasi
+import '../providers/nav_provider.dart';
 import '../theme/app_colors.dart';
-// Mengimpor konfigurasi gaya teks aplikasi
 import '../theme/app_text.dart';
-// Mengimpor widget kustom untuk notifikasi toast
+import '../utils/format.dart';
 import '../widgets/app_toast.dart';
-// Mengimpor widget kustom untuk menampilkan gambar produk
+import '../widgets/grad_button.dart';
 import '../widgets/product_image.dart';
-// Mengimpor widget animasi kemunculan (reveal)
 import '../widgets/reveal.dart';
-// Mengimpor kumpulan widget UI kit tambahan
-import '../widgets/ui_kit.dart';
+import '../models/product_model.dart';
 
-// Kelas CartScreen berupa StatelessWidget untuk menampilkan halaman keranjang belanja
+/// Tab Keranjang: geser untuk hapus (bisa diurungkan), ubah jumlah, ringkasan, checkout.
 class CartScreen extends StatelessWidget {
   const CartScreen({super.key});
 
-  // Fungsi privat untuk bernavigasi ke halaman checkout
   void _checkout(BuildContext context) => context.push('/checkout');
 
   @override
   Widget build(BuildContext context) {
-    // Memantau perubahan state dari CartProvider
     final cart = context.watch<CartProvider>();
+    final items = cart.items;
+    final bottomPad = 120 + MediaQuery.of(context).padding.bottom;
 
-    // Jika keranjang kosong, tampilkan tampilan status kosong (EmptyState)
-    if (cart.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
-        children: [
-          Reveal(
-            child: EmptyState(
-              icon: Icons.shopping_bag_outlined,
-              title: 'Keranjangmu masih kosong',
-              text: 'Yuk, mulai belanja produk pastel impianmu!',
-              buttonLabel: 'Mulai Belanja',
-              onButton: () => context.go('/home'),
-            ),
-          ),
-        ],
-      );
-    }
+    if (items.isEmpty) return _empty(context);
 
-    // Jika keranjang memiliki isi, tampilkan daftar item keranjang dan ringkasan pembayaran
     return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+      padding: EdgeInsets.fromLTRB(20, 8, 20, bottomPad),
       children: [
         Reveal(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Text.rich(
-              TextSpan(children: [
-                const TextSpan(text: 'Keranjang '),
-                TextSpan(
-                  text: 'Belanja',
-                  style: AppText.serif(30,
-                      w: FontWeight.w600,
-                      style: FontStyle.italic,
-                      color: AppColors.purpleText,
-                      height: 1.05),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text('Keranjang', style: AppText.serif(size: 30)),
+              ),
+              Pressable(
+                onTap: () {
+                  cart.clear();
+                  showAppToast(
+                    context,
+                    message: 'Keranjang dikosongkan',
+                    icon: Icons.delete_sweep_rounded,
+                    color: AppColors.rose,
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppColors.rose,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    'Kosongkan',
+                    style: AppText.sans(size: 12, weight: FontWeight.w800),
+                  ),
                 ),
-                TextSpan(text: ' ${kUser.firstName}'),
-              ]),
-              style: AppText.serif(30, w: FontWeight.w600, height: 1.05),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${cart.totalQuantity} barang • geser ke kiri untuk menghapus',
+          style: AppText.sans(size: 12, color: AppColors.inkSoft),
+        ),
+        const SizedBox(height: 14),
+        for (var i = 0; i < items.length; i++)
+          Dismissible(
+            key: ValueKey('cart-${items[i].product.id}'),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(right: 24),
+              alignment: Alignment.centerRight,
+              decoration: BoxDecoration(
+                color: AppColors.rose,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(Icons.delete_outline_rounded, color: AppColors.ink),
+            ),
+            onDismissed: (_) {
+              final removed = cart.remove(items[i].product.id);
+              if (removed == null) return;
+              showAppToast(
+                context,
+                message: 'Dihapus dari keranjang',
+                subtitle: removed.item.product.title,
+                icon: Icons.delete_outline_rounded,
+                color: AppColors.rose,
+                actionLabel: 'URUNGKAN',
+                onAction: () => cart.restore(removed),
+              );
+            },
+            child: Reveal(
+              delayMs: 80 + (i < 6 ? i * 70 : 0),
+              child: _CartTile(item: items[i]),
             ),
           ),
-        ),
-        // Looping untuk merender setiap baris item produk di dalam keranjang
-        for (var i = 0; i < cart.items.length; i++)
-          _CartRow(
-            key: ValueKey(cart.items[i].product.id),
-            item: cart.items[i],
-            index: i,
-          ),
-        // Menampilkan widget ringkasan total belanja di bagian bawah
-        Reveal(
-          delay: Duration(milliseconds: 75 * (cart.items.length + 1)),
-          child: _Summary(cart: cart, onCheckout: () => _checkout(context)),
-        ),
+        const SizedBox(height: 8),
+        Reveal(delayMs: 260, child: _summary(context, cart)),
       ],
+    );
+  }
+
+  Widget _row(String label, Widget value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(label, style: AppText.sans(size: 13, color: AppColors.inkSoft)),
+            ),
+            value,
+          ],
+        ),
+      );
+
+  Widget _summary(BuildContext context, CartProvider cart) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: AppColors.cardShadow,
+      ),
+      child: Column(
+        children: [
+          _row(
+            'Subtotal',
+            Text(money(cart.originalTotal), style: AppText.sans(weight: FontWeight.w700)),
+          ),
+          if (cart.savings > 0.005)
+            _row(
+              'Hemat diskon',
+              Text(
+                '- ${money(cart.savings)}',
+                style: AppText.sans(weight: FontWeight.w800, color: const Color(0xFF3FA27F)),
+              ),
+            ),
+          _row(
+            'Ongkir',
+            Text('Gratis', style: AppText.sans(weight: FontWeight.w800, color: const Color(0xFF3FA27F))),
+          ),
+          const Divider(height: 22, color: AppColors.lavender),
+          Row(
+            children: [
+              Expanded(child: Text('Total', style: AppText.serif(size: 22))),
+              CountUpText(
+                value: cart.total,
+                format: money,
+                style: AppText.sans(size: 21, weight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          GradButton(
+            label: 'Checkout',
+            icon: Icons.lock_rounded,
+            onTap: () => _checkout(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _empty(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Reveal(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 900),
+                curve: Curves.elasticOut,
+                builder: (context, v, child) => Transform.scale(scale: v, child: child),
+                child: Container(
+                  width: 110,
+                  height: 110,
+                  decoration: const BoxDecoration(
+                    gradient: AppColors.heroGradient,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.shopping_bag_outlined, size: 48, color: AppColors.ink),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text('Keranjang masih kosong', style: AppText.serif(size: 26)),
+              const SizedBox(height: 6),
+              Text(
+                'Yuk pilih produk pastel favoritmu.',
+                style: AppText.sans(color: AppColors.inkSoft),
+              ),
+              const SizedBox(height: 20),
+              GradButton(
+                label: 'Mulai belanja',
+                icon: Icons.storefront_rounded,
+                onTap: () => context.read<NavProvider>().go(0),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
-// Widget privat _CartRow untuk merepresentasikan satu baris item produk di keranjang
-class _CartRow extends StatefulWidget {
+class _CartTile extends StatelessWidget {
   final CartItem item;
-  final int index;
-  const _CartRow({super.key, required this.item, required this.index});
-
-  @override
-  State<_CartRow> createState() => _CartRowState();
-}
-
-class _CartRowState extends State<_CartRow> {
-  bool _fade = false;     // State lokal untuk efek memudar saat item dihapus
-  bool _collapse = false; // State lokal untuk efek menutup/mengecil saat item dihapus
-
-  // Fungsi asinkron untuk menangani animasi penghapusan item dari keranjang
-  Future<void> _remove() async {
-    if (_fade) return;
-    setState(() => _fade = true); // Mulai animasi fade out
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return;
-    setState(() => _collapse = true); // Mulai animasi collapse tinggi widget
-    await Future<void>.delayed(const Duration(milliseconds: 320));
-    if (!mounted) return;
-
-    final cart = context.read<CartProvider>();
-    final title = widget.item.product.title;
-    final removed = cart.remove(widget.item.product.id); // Hapus item dari provider
-    // Jika berhasil dihapus, tampilkan toast dengan tombol opsi "Urungkan" (Undo)
-    if (removed != null && mounted) {
-      showAppToast(
-        context,
-        message: '$title dihapus dari keranjang',
-        icon: Icons.close_rounded,
-        actionLabel: 'Urungkan',
-        onAction: () => cart.restore(removed), // Kembalikan item jika tombol ditekan
-        duration: const Duration(milliseconds: 2600),
-      );
-    }
-  }
+  const _CartTile({required this.item});
 
   @override
   Widget build(BuildContext context) {
     final cart = context.read<CartProvider>();
-    final p = widget.item.product;
-    final (bg, _) = AppColors.toneFor(p.id);
+    final p = item.product;
+    final tone = AppColors.toneFor(p.id);
 
-    // Desain tampilan baris kartu produk keranjang
-    final row = Container(
-      margin: const EdgeInsets.only(bottom: 11),
-      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
+    Widget stepBtn(IconData icon, VoidCallback? onTap) => Pressable(
+          scale: 0.85,
+          onTap: onTap,
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: onTap == null ? AppColors.lavender.o(0.5) : AppColors.lavender,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 17, color: AppColors.ink),
+          ),
+        );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
@@ -155,187 +244,71 @@ class _CartRowState extends State<_CartRow> {
       ),
       child: Row(
         children: [
-          // Gambar produk yang dapat diklik untuk menuju halaman detail produk
-          GestureDetector(
-            onTap: () => context.push('/detail/${p.id}', extra: p),
-            child: Container(
-              width: 68,
-              height: 68,
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18)),
-              clipBehavior: Clip.antiAlias,
-              child: ProductImage(
-                url: p.thumbnail,
-                category: p.category,
-                id: p.id,
-                artFactor: .9,
-              ),
-            ),
+          Container(
+            width: 82,
+            height: 82,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: tone.bg, borderRadius: BorderRadius.circular(18)),
+            child: ProductImage(url: p.thumbnail, iconSize: 28),
           ),
           const SizedBox(width: 12),
-          // Informasi judul dan harga produk
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(p.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.sans(12.5, w: FontWeight.w700, height: 1.3)),
-                const SizedBox(height: 5),
-                Text(usd(p.discountedPrice), style: AppText.sans(13.5, w: FontWeight.w800)),
+                Text(
+                  categoryLabel(p.category).toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.sans(
+                    size: 9.5,
+                    weight: FontWeight.w700,
+                    color: AppColors.inkFaint,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Text(
+                  p.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.sans(size: 13.5, weight: FontWeight.w700, height: 1.25),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    stepBtn(
+                      Icons.remove_rounded,
+                      item.quantity > 1 ? () => cart.decrement(p.id) : null,
+                    ),
+                    SizedBox(
+                      width: 30,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+                        child: Text(
+                          '${item.quantity}',
+                          key: ValueKey(item.quantity),
+                          textAlign: TextAlign.center,
+                          style: AppText.sans(size: 14, weight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    stepBtn(
+                      Icons.add_rounded,
+                      item.quantity < p.stock ? () => cart.increment(p.id) : null,
+                    ),
+                    const Spacer(),
+                    Text(
+                      money(item.lineTotal),
+                      style: AppText.sans(size: 14.5, weight: FontWeight.w800),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          // Tombol hapus dan pengatur jumlah (stepper kuantitas)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Pressable(
-                onTap: _remove,
-                scale: .8,
-                child: const Padding(
-                  padding: EdgeInsets.all(2),
-                  child: Icon(Icons.close_rounded, size: 17, color: AppColors.ink3),
-                ),
-              ),
-              const SizedBox(height: 6),
-              QtyStepper(
-                compact: true,
-                value: widget.item.quantity,
-                onDec: () => cart.decrement(p.id),
-                onInc: () {
-                  // Cek apakah kuantitas sudah mencapai batas stok maksimum
-                  if (widget.item.quantity >= p.stock) {
-                    showAppToast(context,
-                        message: 'Stok maksimal tercapai',
-                        icon: Icons.close_rounded,
-                        duration: const Duration(milliseconds: 1500));
-                  } else {
-                    cart.increment(p.id);
-                  }
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    // Membungkus baris dengan animasi reveal, ukuran, slide, dan opacity saat dihapus
-    return Reveal(
-      delay: Duration(milliseconds: 75 * (widget.index + 1)),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeInOut,
-        alignment: Alignment.topCenter,
-        child: _collapse
-            ? const SizedBox(width: double.infinity)
-            : AnimatedSlide(
-                offset: _fade ? const Offset(.12, 0) : Offset.zero,
-                duration: const Duration(milliseconds: 250),
-                child: AnimatedOpacity(
-                  opacity: _fade ? 0 : 1,
-                  duration: const Duration(milliseconds: 250),
-                  child: row,
-                ),
-              ),
-      ),
-    );
-  }
-}
-
-// Widget privat _Summary untuk menampilkan rincian total belanja dan tombol checkout
-class _Summary extends StatelessWidget {
-  final CartProvider cart;
-  final VoidCallback onCheckout;
-  const _Summary({required this.cart, required this.onCheckout});
-
-  // Fungsi helper privat untuk membuat baris teks rincian total
-  Widget _row(String l, Widget r) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(l, style: AppText.sans(13, w: FontWeight.w600, color: AppColors.inkSoft)),
-            r,
-          ],
-        ),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    final save = cart.savings;
-    return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: AppColors.softShadow,
-      ),
-      child: Column(
-        children: [
-          _row('Total Belanja',
-              Text(usd(cart.originalTotal), style: AppText.sans(13, w: FontWeight.w600, color: AppColors.inkSoft))),
-          if (save >= .005)
-            _row('Hemat',
-                Text('-${usd(save)}', style: AppText.sans(13, w: FontWeight.w800, color: AppColors.mintDeep))),
-          _row('Biaya Pengiriman',
-              Text('Gratis', style: AppText.sans(13, w: FontWeight.w800, color: AppColors.mintDeep))),
-          const SizedBox(height: 4),
-          // Garis putus-putus pembatas menggunakan CustomPaint
-          SizedBox(height: 1, width: double.infinity, child: CustomPaint(painter: _DashPainter())),
-          const SizedBox(height: 14),
-          // Baris total pembayaran akhir dengan animasi perubahan angka
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text('Total Pembayaran', style: AppText.serif(20)),
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: cart.total),
-                duration: const Duration(milliseconds: 700),
-                curve: Curves.easeOutCubic,
-                builder: (context, v, _) => Text(
-                  usd(v),
-                  style: AppText.serif(30, height: 1).copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Tombol aksi utama untuk melanjutkan ke halaman checkout
-          GradientButton(
-            label: 'Checkout Sekarang',
-            icon: Icons.arrow_forward_rounded,
-            trailingIcon: true,
-            expand: true,
-            padding: const EdgeInsets.symmetric(vertical: 15),
-            onTap: onCheckout,
-          ),
         ],
       ),
     );
   }
-}
-
-// CustomPainter (_DashPainter) untuk menggambar garis putus-putus pada ringkasan pembayaran
-class _DashPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = AppColors.ink.withValues(alpha: .2)
-      ..strokeWidth = 1;
-    for (double x = 0; x < size.width; x += 7) {
-      canvas.drawLine(Offset(x, 0), Offset(x + 4, 0), p);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
 }

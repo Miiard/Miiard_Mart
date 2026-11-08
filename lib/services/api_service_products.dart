@@ -1,13 +1,15 @@
 import 'package:dio/dio.dart';
+import '../config/api_config.dart';
 import '../models/product_model.dart';
+import 'http_client.dart';
 
 class ApiServiceProducts {
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: 'https://dummyjson.com',
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 15),
-    headers: {'Content-Type': 'application/json'},
-  ));
+  final Dio _dio;
+
+  /// Tanpa [baseUrl] memakai server sendiri (Docker) lengkap dengan token login.
+  /// Dengan [baseUrl] (misalnya dummyjson.com) dipakai sebagai sumber cadangan baca-saja.
+  ApiServiceProducts({String? baseUrl})
+      : _dio = buildDio(baseUrl ?? ApiConfig.backendUrl, withAuth: baseUrl == null);
 
   /// limit = 0 -> dummyjson mengembalikan SEMUA produk.
   Future<ProductsResponse> getAllProducts({int limit = 0, int skip = 0}) async {

@@ -1,121 +1,149 @@
-// Mengimpor library asinkron dart untuk menggunakan fitur 'Timer' (jeda waktu)
 import 'dart:async';
-// Mengimpor material UI dasar Flutter untuk pembuatan widget dan animasi
+
 import 'package:flutter/material.dart';
 
-/// Animasi masuk: muncul pelan sambil naik/bergeser, dengan jeda (stagger).
-// Menggunakan StatefulWidget karena widget ini butuh mengelola siklus hidup sebuah animasi (play, stop)
+/// Muncul perlahan: fade + geser + sedikit membesar. Dipakai di setiap halaman.
 class Reveal extends StatefulWidget {
-  // Widget/komponen anak yang akan diberikan efek animasi ini
   final Widget child;
-  // Waktu tunggu (jeda) sebelum animasi mulai dimainkan
-  final Duration delay;
-  // Lama waktu animasi dari awal sampai selesai (durasi)
+  final int delayMs;
+  final double dy;
+  final double dx;
+  final double fromScale;
   final Duration duration;
-  // Posisi awal (geser) widget sebelum dianimasikan kembali ke posisi aslinya
-  final Offset offset;
-  // Ukuran awal (skala) widget sebelum kembali ke ukuran aslinya (1.0 = 100%)
-  final double scaleFrom;
-  // Sudut putaran awal (rotasi) dalam satuan radian, default-nya 0 (tidak berputar)
-  final double rotateFrom; // radian
-  // Gaya pergerakan animasi (misal: melambat di akhir, atau memantul). Default: easeOutCubic
-  final Curve curve;
 
-  // Constructor wajib untuk menampung seluruh pengaturan animasi dari luar
   const Reveal({
     super.key,
     required this.child,
-    this.delay = Duration.zero, // Default tanpa jeda
-    this.duration = const Duration(milliseconds: 850),
-    this.offset = const Offset(0, 18), // Default akan bergeser naik dari bawah sejauh 18 piksel
-    this.scaleFrom = 1, // Default tidak ada efek perbesaran
-    this.rotateFrom = 0,
-    this.curve = Curves.easeOutCubic,
+    this.delayMs = 0,
+    this.dy = 22,
+    this.dx = 0,
+    this.fromScale = 1,
+    this.duration = const Duration(milliseconds: 650),
   });
 
   @override
-  // Menyambungkan widget ini dengan state class-nya
   State<Reveal> createState() => _RevealState();
 }
 
-class _RevealState extends State<Reveal>
-    // SingleTickerProviderStateMixin: Wajib ditambahkan agar state ini bisa menjadi penggerak (ticker) frame per frame animasi
-    // AutomaticKeepAliveClientMixin: Menjaga state widget (seperti ListView/Grid) agar animasinya tidak mengulang-ulang terus saat di-scroll
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-      
-  // AnimationController adalah 'mesin' utama yang menggerakkan nilai animasi dari 0.0 sampai 1.0 (maju)
+class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
   late final AnimationController _c =
       AnimationController(vsync: this, duration: widget.duration);
-      
-  // Deklarasi timer untuk menangani efek jeda (delay)
+  late final Animation<double> _t =
+      CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
   Timer? _timer;
+  bool _started = false;
 
-  // Fitur dari AutomaticKeepAliveClientMixin: membalas dengan 'true' agar widget tidak dihancurkan saat di luar layar
   @override
-  bool get wantKeepAlive => true;
-
-  // initState berjalan satu kali saat widget pertama kali dilahirkan
-  @override
-  void initState() {
-    super.initState();
-    // Jika delay diset nol, langsung jalankan mesin animasi (forward)
-    if (widget.delay == Duration.zero) {
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (MediaQuery.of(context).disableAnimations) {
+      _c.value = 1;
+      return;
+    }
+    if (widget.delayMs <= 0) {
       _c.forward();
     } else {
-      // Jika ada delay, buat Timer yang akan menjalankan animasi setelah waktu tunggu habis
-      _timer = Timer(widget.delay, () {
-        // Cek mounted sebelum forward agar tidak error jika widget keburu dihapus saat timer belum selesai
+      _timer = Timer(Duration(milliseconds: widget.delayMs), () {
         if (mounted) _c.forward();
       });
     }
   }
 
-  // dispose membersihkan sampah memori saat widget ini sudah tidak terpakai/dihapus dari layar
   @override
   void dispose() {
-    // Matikan timer yang mungkin masih menghitung mundur
     _timer?.cancel();
-    // Buang mesin controller animasi
     _c.dispose();
     super.dispose();
   }
 
-  // Metode untuk menggambar komponen UI dengan animasi
   @override
   Widget build(BuildContext context) {
-    // Wajib dipanggil saat menggunakan AutomaticKeepAliveClientMixin
-    super.build(context);
-    
-    // AnimatedBuilder akan me-rebuild dirinya sendiri secara otomatis setiap frame dari AnimationController
     return AnimatedBuilder(
-      animation: _c,
-      child: widget.child, // Meneruskan widget aslinya agar performa lebih efisien (tidak dibuat ulang tiap frame)
+      animation: _t,
+      child: widget.child,
       builder: (context, child) {
-        // Menerapkan efek kelenturan (curve) pada nilai animasi saat ini (v akan berjalan dari 0 ke 1)
-        final v = widget.curve.transform(_c.value);
-        Widget w = child!;
-        
-        // 1. Jika ada efek rotasi yang diatur (rotateFrom != 0), putar balik widget
-        // Saat v=0 putaran penuh sebesar rotateFrom, saat v=1 putarannya menjadi 0 (normal)
-        if (widget.rotateFrom != 0) {
-          w = Transform.rotate(angle: widget.rotateFrom * (1 - v), child: w);
-        }
-        
-        // 2. Jika ada efek perbesaran/skala, perbesar komponen
-        // Saat v=0 skalanya adalah scaleFrom, saat v=1 skalanya mencapai angka 1 (normal/100%)
-        if (widget.scaleFrom != 1) {
-          w = Transform.scale(
-              scale: widget.scaleFrom + (1 - widget.scaleFrom) * v, child: w);
-        }
-        
-        // 3 & 4. Kembalikan widget dengan efek Transparansi (Opacity) dan Posisi (Translate)
+        final v = _t.value;
         return Opacity(
-          // Transparansi berjalan dari 0 (hilang) ke 1 (jelas). Fungsi clamp menjaga agar nilai tidak error (kurang dari 0 / lebih dari 1)
-          opacity: v.clamp(0.0, 1.0).toDouble(),
-          // Posisi berjalan dari offset awal menuju (0,0) letak asli
-          child: Transform.translate(offset: widget.offset * (1 - v), child: w),
+          opacity: v,
+          child: Transform.translate(
+            offset: Offset(widget.dx * (1 - v), widget.dy * (1 - v)),
+            child: Transform.scale(
+              scale: widget.fromScale + (1 - widget.fromScale) * v,
+              child: child,
+            ),
+          ),
         );
       },
+    );
+  }
+}
+
+/// Efek tekan: mengecil sedikit saat disentuh.
+class Pressable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final double scale;
+
+  const Pressable({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.scale = 0.96,
+  });
+
+  @override
+  State<Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<Pressable> {
+  bool _down = false;
+
+  void _set(bool v) {
+    if (_down != v) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: widget.onTap == null ? null : (_) => _set(true),
+      onTapUp: widget.onTap == null ? null : (_) => _set(false),
+      onTapCancel: () => _set(false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? widget.scale : 1,
+        duration: const Duration(milliseconds: 130),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Angka yang berhitung naik dari 0.
+class CountUpText extends StatelessWidget {
+  final double value;
+  final String Function(double) format;
+  final TextStyle? style;
+  final Duration duration;
+
+  const CountUpText({
+    super.key,
+    required this.value,
+    required this.format,
+    this.style,
+    this.duration = const Duration(milliseconds: 900),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: value),
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      builder: (context, v, _) => Text(format(v), style: style),
     );
   }
 }

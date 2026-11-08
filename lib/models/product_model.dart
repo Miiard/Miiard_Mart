@@ -1,44 +1,21 @@
-// Fungsi helper untuk mengubah nilai dinamis (dynamic) menjadi tipe data double (angka desimal).
-// Jika nilai null atau bukan angka, maka akan mengembalikan nilai default 0.
 double _d(dynamic v) => (v as num?)?.toDouble() ?? 0;
 
-// Peta konstanta (Map) untuk menerjemahkan kategori produk dari bahasa Inggris ke bahasa Indonesia.
-const _categoryLabels = {
-  'beauty': 'Kecantikan',
-  'fragrances': 'Parfum',
-  'furniture': 'Perabot',
-  'groceries': 'Kebutuhan',
-  'home-decoration': 'Dekorasi',
-  'kitchen-accessories': 'Dapur',
-  'skin-care': 'Perawatan Kulit',
-  'laptops': 'Laptop',
-  'smartphones': 'Ponsel',
-};
+String prettyCategory(String slug) => slug
+    .split('-')
+    .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
+    .join(' ');
 
-// Fungsi untuk mempercantik nama kategori produk (slug).
-// Jika ada di peta _categoryLabels akan diterjemahkan, 
-// jika tidak, teks dengan tanda hubung (-) akan diubah menjadi huruf kapital di setiap kata awalnya.
-String prettyCategory(String slug) =>
-    _categoryLabels[slug] ??
-    slug
-        .split('-')
-        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
-        .join(' ');
-
-// Kelas untuk merepresentasikan data ulasan (review) dari produk.
 class Review {
-  final int rating;             // Rating atau penilaian berupa angka (1-5)
-  final String comment;         // Komentar atau teks ulasan dari pembeli
-  final String reviewerName;    // Nama orang yang memberikan ulasan
+  final int rating;
+  final String comment;
+  final String reviewerName;
 
-  // Konstruktor untuk inisialisasi objek Review
   Review({
     required this.rating,
     required this.comment,
     required this.reviewerName,
   });
 
-  // Factory constructor untuk mengubah data JSON (Map) menjadi objek Review
   factory Review.fromJson(Map<String, dynamic> j) => Review(
         rating: (j['rating'] as num?)?.toInt() ?? 0,
         comment: j['comment'] as String? ?? '',
@@ -48,14 +25,12 @@ class Review {
 
 /// Item dari endpoint /products/categories.
 class Category {
-  final String slug;    // Kode unik kategori (misal: 'smartphones')
-  final String name;    // Nama asli kategori
-  final String url;     // URL endpoint API untuk kategori tersebut
+  final String slug;
+  final String name;
+  final String url;
 
-  // Konstruktor untuk inisialisasi objek Category
   Category({required this.slug, required this.name, required this.url});
 
-  // Factory constructor untuk memetakan data JSON ke dalam objek Category
   factory Category.fromJson(Map<String, dynamic> j) => Category(
         slug: j['slug'] as String? ?? '',
         name: j['name'] as String? ?? '',
@@ -65,12 +40,11 @@ class Category {
 
 /// Bungkus respons list produk: { products, total, skip, limit }.
 class ProductsResponse {
-  final List<Product> products; // Daftar list produk
-  final int total;              // Total keseluruhan produk yang tersedia di server
-  final int skip;               // Jumlah data yang dilewati (untuk pagination)
-  final int limit;              // Batasan jumlah produk per halaman
+  final List<Product> products;
+  final int total;
+  final int skip;
+  final int limit;
 
-  // Konstruktor untuk inisialisasi respons produk
   ProductsResponse({
     required this.products,
     required this.total,
@@ -78,7 +52,6 @@ class ProductsResponse {
     required this.limit,
   });
 
-  // Factory constructor untuk memparsing respons JSON API ke objek ProductsResponse
   factory ProductsResponse.fromJson(Map<String, dynamic> j) => ProductsResponse(
         products: (j['products'] as List? ?? [])
             .map((e) => Product.fromJson(e as Map<String, dynamic>))
@@ -89,7 +62,6 @@ class ProductsResponse {
       );
 }
 
-// Kelas utama untuk merepresentasikan data sebuah produk
 class Product {
   final int id;
   final String title;
@@ -109,7 +81,6 @@ class Product {
   final String returnPolicy;
   final List<Review> reviews;
 
-  // Konstruktor untuk inisialisasi objek Product
   Product({
     required this.id,
     required this.title,
@@ -130,10 +101,8 @@ class Product {
     required this.reviews,
   });
 
-  // Getter untuk menghitung harga setelah mendapatkan potongan diskon
   double get discountedPrice => price * (1 - discountPercentage / 100);
 
-  // Fungsi copyWith untuk menduplikasi objek Product dengan opsi mengubah beberapa nilai tertentu saja
   Product copyWith({
     int? id,
     String? title,
@@ -175,7 +144,6 @@ class Product {
   }
 
   /// Body untuk POST/PUT ke dummyjson.
-  /// Mengubah objek Product kembali menjadi format Map (JSON) untuk dikirim ke API.
   Map<String, dynamic> toJson() => {
         'title': title,
         'description': description,
@@ -183,9 +151,10 @@ class Product {
         'price': price,
         'stock': stock,
         'brand': brand,
+        'thumbnail': thumbnail,
+        'images': images,
       };
 
-  // Factory constructor untuk memetakan data JSON dari API ke dalam objek Product
   factory Product.fromJson(Map<String, dynamic> j) {
     final thumb = j['thumbnail'] as String? ?? '';
     final imgs = (j['images'] as List?)?.map((e) => e.toString()).toList() ?? [];
@@ -200,18 +169,47 @@ class Product {
       stock: (j['stock'] as num?)?.toInt() ?? 0,
       brand: j['brand'] as String? ?? '',
       thumbnail: thumb,
-      // Jika list gambar kosong, gunakan thumbnail sebagai satu-satunya gambar
       images: imgs.isEmpty ? [thumb] : imgs,
       tags: (j['tags'] as List?)?.map((e) => e.toString()).toList() ?? [],
       warrantyInformation: j['warrantyInformation'] as String? ?? '-',
       shippingInformation: j['shippingInformation'] as String? ?? '-',
       availabilityStatus: j['availabilityStatus'] as String? ?? '-',
       returnPolicy: j['returnPolicy'] as String? ?? '-',
-      // Memetakan list JSON review menjadi objek Review
       reviews: (j['reviews'] as List?)
               ?.map((e) => Review.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );
   }
+}
+
+/// Label kategori berbahasa Indonesia untuk tampilan (slug asli tetap dipakai untuk API).
+String categoryLabel(String slug) {
+  const map = {
+    'beauty': 'Kecantikan',
+    'fragrances': 'Parfum',
+    'furniture': 'Perabot',
+    'groceries': 'Kebutuhan',
+    'home-decoration': 'Dekorasi',
+    'kitchen-accessories': 'Dapur',
+    'laptops': 'Laptop',
+    'mens-shirts': 'Kemeja Pria',
+    'mens-shoes': 'Sepatu Pria',
+    'mens-watches': 'Jam Pria',
+    'mobile-accessories': 'Aksesori HP',
+    'motorcycle': 'Motor',
+    'skin-care': 'Perawatan Kulit',
+    'smartphones': 'Ponsel',
+    'sports-accessories': 'Olahraga',
+    'sunglasses': 'Kacamata',
+    'tablets': 'Tablet',
+    'tops': 'Atasan',
+    'vehicle': 'Kendaraan',
+    'womens-bags': 'Tas Wanita',
+    'womens-dresses': 'Gaun',
+    'womens-jewellery': 'Perhiasan',
+    'womens-shoes': 'Sepatu Wanita',
+    'womens-watches': 'Jam Wanita',
+  };
+  return map[slug] ?? prettyCategory(slug);
 }

@@ -1,25 +1,16 @@
-
-// Mengimpor pustaka asynchronous Dart untuk fitur timer/penundaan waktu
-import 'dart:async';
-// Mengimpor pustaka matematika Dart (alias math) untuk perhitungan sudut dan skala
 import 'dart:math' as math;
-// Mengimpor pustaka UI Dart untuk efek blur gambar (ImageFilter)
-import 'dart:ui' as ui;
+import 'dart:ui' show ImageFilter;
 
-// Mengimpor pustaka utama material design dari Flutter
 import 'package:flutter/material.dart';
-// Mengimpor paket go_router untuk manajemen navigasi halaman
 import 'package:go_router/go_router.dart';
 
-// Mengimpor konfigurasi warna kustom aplikasi
-import '../theme/app_colors.dart';
-// Mengimpor konfigurasi gaya teks aplikasi
-import '../theme/app_text.dart';
-// Mengimpor kumpulan widget UI kit tambahan
-import '../widgets/ui_kit.dart';
+import 'package:provider/provider.dart';
 
-/// Layar pembuka: latar blur, logo muncul, kilau, dan garis pengisian.
-/// Ketuk untuk melewati.
+import '../providers/auth_provider.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_text.dart';
+
+/// Layar pembuka: logo muncul dari buram ke tajam, kilau menyapu, kilauan bintang, garis progres.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -27,206 +18,208 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
-  // Controller animasi pengenalan (intro) berdurasi 2400 milidetik
-  late final AnimationController _intro = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2400),
-  )..forward();
-  
-  // Controller animasi kilau (twinkle) yang berjalan berulang terus-menerus
-  late final AnimationController _twinkle = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 3400),
-  )..repeat();
-
-  // Definisi kurva animasi transisi untuk latar belakang, logo, tagline, dan garis loading
-  late final Animation<double> _bg = _iv(0, .6);
-  late final Animation<double> _logo = _iv(.06, .62);
-  late final Animation<double> _tag = _iv(.56, .9);
-  late final Animation<double> _line = _iv(.12, .88, Curves.easeInOutCubic);
-
-  Timer? _timer;          // Timer otomatis untuk berpindah halaman setelah durasi tertentu
-  bool _leaving = false;  // Status penanda apakah animasi keluar (exit) sedang berjalan
-
-  // Fungsi helper untuk membuat CurvedAnimation dengan interval tertentu
-  Animation<double> _iv(double a, double b, [Curve c = Curves.easeOutCubic]) =>
-      CurvedAnimation(parent: _intro, curve: Interval(a, b, curve: c));
+class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 2800));
+  bool _left = false;
 
   @override
   void initState() {
     super.initState();
-    // Mengatur timer 2700 milidetik untuk otomatis memicu fungsi pindah halaman (_leave)
-    _timer = Timer(const Duration(milliseconds: 2700), _leave);
-  }
-
-  // Fungsi untuk menangani transisi keluar (fade-out & zoom) menuju halaman beranda (/home)
-  void _leave() {
-    if (_leaving || !mounted) return;
-    setState(() => _leaving = true);
-    Future.delayed(const Duration(milliseconds: 550), () {
-      if (mounted) context.go('/home');
-    });
+    _c.forward().whenComplete(() => _leave());
   }
 
   @override
   void dispose() {
-    _timer?.cancel();     // Membatalkan timer saat widget dihancurkan
-    _intro.dispose();     // Membersihkan intro animation controller
-    _twinkle.dispose();   // Membersihkan twinkle animation controller
+    _c.dispose();
     super.dispose();
+  }
+
+  Future<void> _leave() async {
+    if (_left || !mounted) return;
+    _left = true;
+    // tunggu pemeriksaan sesi login; router lalu memilih beranda atau halaman login
+    await context.read<AuthProvider>().restore();
+    if (mounted) context.go('/');
+  }
+
+  double _seg(double a, double b, [Curve curve = Curves.easeOutCubic]) {
+    final t = ((_c.value - a) / (b - a)).clamp(0.0, 1.0).toDouble();
+    return curve.transform(t);
   }
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.sizeOf(context).width;
-    final logoW = math.min(330.0, w - 36); // Menyesuaikan lebar logo dengan ukuran layar perangkat
-
     return Scaffold(
-      backgroundColor: const Color(0xFFEFE6FB),
+      backgroundColor: AppColors.background,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _leave, // Memungkinkan pengguna melewati splash screen dengan mengetuk layar
-        child: AnimatedOpacity(
-          opacity: _leaving ? 0 : 1,
-          duration: const Duration(milliseconds: 550),
-          curve: Curves.easeOutCubic,
-          child: AnimatedScale(
-            scale: _leaving ? 1.08 : 1,
-            duration: const Duration(milliseconds: 550),
-            curve: Curves.easeOutCubic,
-            child: Stack(
+        onTap: () => _leave(),
+        child: AnimatedBuilder(
+          animation: _c,
+          builder: (context, _) {
+            final logoIn = _seg(0.0, 0.4);
+            final textIn = _seg(0.35, 0.6);
+            final bar = _seg(0.1, 0.95, Curves.easeInOut);
+            final sweep = _seg(0.4, 0.75, Curves.easeInOut);
+            final blur = (1 - logoIn) * 14;
+
+            return Stack(
               fit: StackFit.expand,
               children: [
-                // Latar foto diburamkan (blurred background)
-                ClipRect(
-                  child: FadeTransition(
-                    opacity: _bg,
-                    child: AnimatedBuilder(
-                      animation: _bg,
-                      builder: (context, child) =>
-                          Transform.scale(scale: 1.3 - .2 * _bg.value, child: child),
-                      child: ImageFiltered(
-                        imageFilter: ui.ImageFilter.blur(sigmaX: 26, sigmaY: 26),
-                        child: Image.asset('assets/images/back.jpg', fit: BoxFit.cover),
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.9,
+                    child: Image.asset(
+                      'assets/images/splash_bg.jpg',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        decoration: const BoxDecoration(gradient: AppColors.heroGradient),
                       ),
                     ),
                   ),
                 ),
-                // Efek animasi kilau (sparkle) pada berbagai posisi di layar
-                _sparkle(const Alignment(-.68, -.56), 16, Colors.white, .10),
-                _sparkle(const Alignment(.72, -.40), 11, Colors.white, .38),
-                _sparkle(const Alignment(-.56, .48), 12, const Color(0xFFFFF0F5), .55),
-                _sparkle(const Alignment(.60, .40), 18, Colors.white, .02),
-                _sparkle(const Alignment(0, -.72), 9, Colors.white, .32),
-                // Bagian Logo + Tagline di tengah layar
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Animasi kemunculan logo aplikasi
-                        AnimatedBuilder(
-                          animation: _logo,
-                          builder: (context, child) {
-                            final v = _logo.value;
-                            return Opacity(
-                              opacity: v,
-                              child: Transform.translate(
-                                offset: Offset(0, 14 * (1 - v)),
-                                child: Transform.scale(scale: .9 + .1 * v, child: child),
-                              ),
-                            );
-                          },
-                          child: SizedBox(
-                            width: logoW,
-                            child: AspectRatio(
-                              aspectRatio: 491 / 466,
-                              child: Image.asset('assets/images/logo.webp', fit: BoxFit.contain),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        // Animasi teks tagline di bawah logo
-                        FadeTransition(
-                          opacity: _tag,
-                          child: SlideTransition(
-                            position: Tween(begin: const Offset(0, .6), end: Offset.zero)
-                                .animate(_tag),
-                            child: Text(
-                              'Belanja manis, serba pastel',
-                              style: AppText.serif(19,
-                                  w: FontWeight.w600,
-                                  style: FontStyle.italic,
-                                  color: AppColors.inkSoft,
-                                  letterSpacing: .4),
-                            ),
-                          ),
-                        ),
-                      ],
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        colors: [
+                          AppColors.background.o(0.0),
+                          AppColors.background.o(0.55),
+                        ],
+                        radius: 0.95,
+                      ),
                     ),
                   ),
                 ),
-                // Garis pengisian (loading progress line) di bagian bawah
-                Align(
-                  alignment: const Alignment(0, .78),
-                  child: Container(
-                    width: 96,
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: AppColors.ink.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                    alignment: Alignment.centerLeft,
-                    child: SizeTransition(
-                      sizeFactor: _line,
-                      axis: Axis.horizontal,
-                      axisAlignment: -1,
-                      child: Container(
-                        width: 96,
-                        height: 2,
-                        decoration: BoxDecoration(
-                          color: AppColors.ink,
-                          borderRadius: BorderRadius.circular(2),
+                for (var i = 0; i < 7; i++) _sparkle(context, i),
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Opacity(
+                        opacity: logoIn,
+                        child: Transform.scale(
+                          scale: 0.82 + 0.18 * logoIn,
+                          child: ImageFiltered(
+                            imageFilter: _blur(blur),
+                            child: ShaderMask(
+                              blendMode: BlendMode.srcATop,
+                              shaderCallback: (rect) => LinearGradient(
+                                colors: [
+                                  Colors.white.o(0),
+                                  Colors.white.o(0.75),
+                                  Colors.white.o(0),
+                                ],
+                                stops: const [0.0, 0.5, 1.0],
+                                transform: _Slide(sweep),
+                              ).createShader(rect),
+                              child: Image.asset(
+                                'assets/images/logo_full.png',
+                                width: 230,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.storefront_rounded,
+                                  size: 90,
+                                  color: AppColors.ink,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Opacity(
+                        opacity: textIn,
+                        child: Transform.translate(
+                          offset: Offset(0, 14 * (1 - textIn)),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Miiard.Mart',
+                                style: AppText.serif(size: 38, letterSpacing: 0.5),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'BELANJA LEMBUT, HATI SENANG',
+                                style: AppText.sans(
+                                  size: 10.5,
+                                  weight: FontWeight.w700,
+                                  color: AppColors.inkSoft,
+                                  letterSpacing: 2.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 64,
+                  child: Center(
+                    child: Container(
+                      width: 120,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.ink.o(0.08),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: bar,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: AppColors.gradBtn,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
   }
 
-  // Fungsi helper untuk merender efek kilau bintang (sparkle) dengan animasi berkedip dan berputar
-  Widget _sparkle(Alignment at, double size, Color color, double phase) {
-    return Align(
-      alignment: at,
-      child: AnimatedBuilder(
-        animation: _twinkle,
-        builder: (context, _) {
-          final t = (_twinkle.value + phase) % 1;
-          final a = math.sin(t * math.pi);
-          return Opacity(
-            opacity: (a * .95).clamp(0.0, 1.0).toDouble(),
-            child: Transform.rotate(
-              angle: t * math.pi / 2,
-              child: Transform.scale(
-                scale: .4 + .6 * a,
-                child: SizedBox(
-                  width: size,
-                  height: size,
-                  child: CustomPaint(painter: SparklePainter(color)),
-                ),
-              ),
-            ),
-          );
-        },
+  Widget _sparkle(BuildContext context, int i) {
+    final size = MediaQuery.of(context).size;
+    final rnd = math.Random(i * 7 + 3);
+    final x = 0.08 + rnd.nextDouble() * 0.84;
+    final y = 0.1 + rnd.nextDouble() * 0.75;
+    final phase = rnd.nextDouble();
+    final tw = (math.sin((_c.value * 3 + phase) * 2 * math.pi) + 1) / 2;
+    final s = 8.0 + rnd.nextDouble() * 10;
+    return Positioned(
+      left: size.width * x,
+      top: size.height * y,
+      child: Opacity(
+        opacity: 0.15 + 0.6 * tw,
+        child: Transform.scale(
+          scale: 0.6 + 0.6 * tw,
+          child: Icon(Icons.auto_awesome_rounded, size: s, color: AppColors.lav2),
+        ),
       ),
     );
+  }
+
+  ImageFilter _blur(double sigma) => ImageFilter.blur(sigmaX: sigma, sigmaY: sigma);
+}
+
+/// Menggeser gradasi kilau dari kiri ke kanan logo.
+class _Slide extends GradientTransform {
+  final double t; // 0..1
+  const _Slide(this.t);
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    final dx = bounds.width * (t * 2 - 1);
+    return Matrix4.translationValues(dx, 0, 0);
   }
 }

@@ -1,37 +1,25 @@
-// Mengimpor pustaka matematika untuk menghasilkan kode unik acak
-import 'dart:math';
-
-// Mengimpor pustaka utama material design dari Flutter
 import 'package:flutter/material.dart';
-// Mengimpor paket go_router untuk navigasi halaman
 import 'package:go_router/go_router.dart';
-// Mengimpor paket provider untuk mengakses state management
 import 'package:provider/provider.dart';
 
-// Mengimpor konfigurasi pembayaran (seperti kurs mata uang USD ke IDR)
-import '../config/payment_config.dart';
-// Mengimpor model data alamat pengiriman
-import '../models/address.dart';
-// Mengimpor model data metode pembayaran
-import '../models/payment_method.dart';
-// Mengimpor state provider keranjang belanja
+import '../models/order_model.dart';
+import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
-// Mengimpor state provider proses checkout
-import '../providers/checkout_provider.dart';
-// Mengimpor konfigurasi warna kustom aplikasi
+import '../providers/nav_provider.dart';
+import '../providers/order_provider.dart';
+import '../providers/product_provider.dart';
 import '../theme/app_colors.dart';
-// Mengimpor konfigurasi gaya teks aplikasi
 import '../theme/app_text.dart';
-// Mengimpor widget bottom sheet untuk pemilihan alamat
-import '../widgets/address_sheet.dart';
-// Mengimpor widget animasi kemunculan (reveal)
+import '../utils/format.dart';
+import '../widgets/app_toast.dart';
+import '../widgets/auth_widgets.dart';
+import '../widgets/grad_button.dart';
+import '../widgets/pay_logo.dart';
+import '../widgets/qris_sheet.dart';
 import '../widgets/reveal.dart';
-// Mengimpor widget kartu bagian (section card)
-import '../widgets/section_card.dart';
-// Mengimpor kumpulan widget UI kit tambahan
-import '../widgets/ui_kit.dart';
+import '../widgets/success_dialog.dart';
 
-// Kelas CheckoutScreen berupa StatefulWidget untuk mengelola halaman checkout pembayaran
+/// Checkout: alamat pengiriman, pilih metode pembayaran, bayar. Pesanan disimpan di MySQL.
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
 
@@ -40,416 +28,301 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
-  /// Kode unik 3 digit yang ditambahkan ke nominal agar pembayaran mudah dicocokkan.
-  final int _code = 100 + Random().nextInt(900); // Menghasilkan angka acak 3 digit antara 100 - 999
+  final _form = GlobalKey<FormState>();
+  late final TextEditingController _name =
+      TextEditingController(text: context.read<AuthProvider>().user?.name ?? '');
+  final _phone = TextEditingController();
+  final _address = TextEditingController();
+  String? _method;
+  bool _busy = false;
+  bool _methodError = false;
 
-  // Fungsi helper untuk mengonversi nominal harga USD ke Rupiah (IDR) dan dibulatkan
-  int _idr(double usdAmount) => (usdAmount * PaymentConfig.usdToIdr).round();
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    _address.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pay() async {
+    final cart = context.read<CartProvider>();
+    if (cart.isEmpty) return;
+    final okForm = _form.currentState?.validate() ?? false;
+    if (_method == null) setState(() => _methodError = true);
+    if (!okForm || _method == null) return;
+
+    final orders = context.read<OrderProvider>();
+    final products = context.read<ProductProvider>();
+    final nav = context.read<NavProvider>();
+    final router = GoRouter.of(context);
+
+    setState(() => _busy = true);
+    final order = await orders.place(
+      items: cart.items,
+      paymentMethod: _method!,
+      name: _name.text.trim(),
+      phone: _phone.text.trim(),
+      address: _address.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    if (order == null) {
+      showAppToast(
+        context,
+        message: 'Pesanan gagal',
+        subtitle: orders.error,
+        icon: Icons.error_outline_rounded,
+        color: AppColors.rose,
+      );
+      return;
+    }
+
+    final cod = order.paymentMethod == 'cod';
+    cart.clear();
+    products.refresh(); // stok di database sudah berkurang
+    if (order.paymentMethod == 'qris') {
+      await showQrisSheet(context, code: order.code, total: order.total, button: 'Lihat pesanan');
+    } else {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => SuccessDialog(
+        title: 'Pesanan berhasil!',
+        line1: '${order.code} • ${money(order.total)}',
+        line2: cod
+            ? 'Siapkan uang pas saat kurir tiba.'
+            : 'Selesaikan pembayaran via ${order.paymentLabel}. Admin akan memverifikasi dan memproses pesananmu.',
+        button: 'Lihat pesanan',
+        ),
+      );
+    }
+    if (!mounted) return;
+    nav.go(0);
+    router.go('/');
+    router.push('/orders');
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Memantau perubahan state dari CartProvider dan CheckoutProvider
     final cart = context.watch<CartProvider>();
-    final co = context.watch<CheckoutProvider>();
-
-    // Menghitung berbagai rincian nominal harga dalam Rupiah
-    final baseIdr = _idr(cart.total);
-    final originalIdr = _idr(cart.originalTotal);
-    final saveIdr = originalIdr - baseIdr;
-    final totalIdr = baseIdr + _code; // Total pembayaran ditambah kode unik 3 digit
-
-    // Mengambil data alamat terpilih, metode pembayaran terpilih, dan status kesiapan checkout
-    final address = co.selectedAddress;
-    final method = co.method;
-    final ready = address != null && method != null && !cart.isEmpty;
+    final bottom = 24 + MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: PastelBackdrop(
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              // Bagian Header (Tombol kembali dan judul halaman)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 20, 4),
+              child: Reveal(
+                dy: -12,
                 child: Row(
                   children: [
-                    RoundIconButton(icon: Icons.arrow_back_rounded, onTap: () => context.pop()),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(children: [
-                          const TextSpan(text: 'Selesaikan '),
-                          TextSpan(
-                            text: 'Pesanan',
-                            style: AppText.serif(30,
-                                w: FontWeight.w600,
-                                style: FontStyle.italic,
-                                color: AppColors.purpleText,
-                                height: 1.05),
-                          ),
-                        ]),
-                        style: AppText.serif(30, w: FontWeight.w600, height: 1.05),
+                    Pressable(
+                      scale: 0.88,
+                      onTap: () => context.canPop() ? context.pop() : context.go('/'),
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: AppColors.softShadow,
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded, size: 19, color: AppColors.ink),
                       ),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text('Checkout', style: AppText.serif(size: 30))),
                   ],
                 ),
               ),
-              // Bagian Konten Utama (Kondisi keranjang kosong atau menampilkan detail checkout)
-              Expanded(
-                child: cart.isEmpty
-                    ? ListView(children: [
-                        EmptyState(
-                          icon: Icons.shopping_bag_outlined,
-                          title: 'Keranjang kosong',
-                          text: 'Tambahkan produk dulu sebelum checkout.',
-                          buttonLabel: 'Mulai Belanja',
-                          onButton: () => context.go('/home'),
-                        ),
-                      ])
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                        children: [
-                          Reveal(child: _addressSection(context, co, address)), // Bagian Alamat Pengiriman
-                          Reveal(
-                            delay: const Duration(milliseconds: 80),
-                            child: _methodSection(co, method), // Bagian Metode Pembayaran
-                          ),
-                          Reveal(
-                            delay: const Duration(milliseconds: 160),
-                            child: _summarySection(cart, saveIdr, originalIdr, totalIdr), // Bagian Ringkasan Pesanan
-                          ),
-                        ],
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      // Tombol bar bawah (Bottom Navigation Bar) untuk aksi pembayaran
-      bottomNavigationBar: _bottomBar(context, cart, address, method, ready, baseIdr, totalIdr),
-    );
-  }
-
-  // ---------- alamat ----------
-
-  // Widget untuk menampilkan bagian pemilihan alamat pengiriman
-  Widget _addressSection(BuildContext context, CheckoutProvider co, Address? a) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionTitle(
-          'Alamat Pengiriman',
-          trailing: a == null
-              ? null
-              : GestureDetector(
-                  onTap: () => showAddressSheet(context), // Membuka sheet ganti alamat
-                  child: Text('Ganti',
-                      style: AppText.sans(12, w: FontWeight.w700, color: AppColors.link)),
-                ),
-        ),
-        if (a == null)
-          Pressable(
-            scale: .98,
-            onTap: () => showAddressSheet(context), // Membuka sheet tambah alamat jika belum ada
-            child: SectionCard(
-              color: Colors.white.withValues(alpha: .7),
-              border: Border.all(color: AppColors.accent, width: 1.5),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const BoxDecoration(
-                        color: AppColors.lavender, shape: BoxShape.circle),
-                    child: const Icon(Icons.add_location_alt_outlined,
-                        size: 20, color: AppColors.ink),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            Expanded(
+              child: cart.isEmpty && !_busy
+                  ? Center(
+                      child: Text('Keranjang kosong.', style: AppText.sans(color: AppColors.inkSoft)),
+                    )
+                  : ListView(
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.fromLTRB(20, 10, 20, bottom),
                       children: [
-                        Text('Tambah alamat pengiriman',
-                            style: AppText.sans(13, w: FontWeight.w800)),
-                        const SizedBox(height: 2),
-                        Text('Wajib diisi sebelum membayar',
-                            style: AppText.sans(11.5, color: AppColors.inkSoft)),
+                        Reveal(delayMs: 60, child: _summary(cart)),
+                        const SizedBox(height: 20),
+                        Reveal(delayMs: 120, child: _sectionTitle('Alamat pengiriman')),
+                        const SizedBox(height: 10),
+                        Reveal(delayMs: 160, child: _addressForm()),
+                        const SizedBox(height: 22),
+                        Reveal(delayMs: 220, child: _sectionTitle('Metode pembayaran')),
+                        if (_methodError && _method == null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Pilih salah satu metode pembayaran.',
+                              style: AppText.sans(size: 12, color: const Color(0xFFC0506E), weight: FontWeight.w700),
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        ..._methods(),
+                        const SizedBox(height: 18),
+                        Reveal(
+                          delayMs: 300,
+                          child: GradButton(
+                            label: 'Bayar ${money(cart.total)}',
+                            icon: Icons.lock_rounded,
+                            loading: _busy,
+                            onTap: _pay,
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded, color: AppColors.ink3),
-                ],
-              ),
             ),
-          )
-        else
-          SectionCard(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: const BoxDecoration(color: AppColors.mint, shape: BoxShape.circle),
-                  child: const Icon(Icons.place_rounded, size: 20, color: AppColors.ink),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        InfoTag(a.label),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(a.recipient,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.sans(13, w: FontWeight.w800)),
-                        ),
-                      ]),
-                      const SizedBox(height: 6),
-                      Text(a.phone, style: AppText.sans(12, color: AppColors.inkSoft)),
-                      const SizedBox(height: 2),
-                      Text(a.fullLine,
-                          style: AppText.sans(12, color: AppColors.inkSoft, height: 1.45)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ---------- metode pembayaran ----------
-
-  // Widget untuk menampilkan daftar pilihan metode pembayaran
-  Widget _methodSection(CheckoutProvider co, PaymentMethod? selected) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionTitle('Metode Pembayaran'),
-        for (final m in PaymentMethod.values)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: _MethodTile(
-              method: m,
-              selected: selected == m,
-              onTap: () => co.selectMethod(m), // Memilih metode pembayaran lewat provider
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ---------- ringkasan ----------
-
-  // Fungsi helper untuk merender baris teks rincian biaya
-  Widget _line(String l, String r, {Color? rc, bool bold = false}) => Padding(
-        padding: const EdgeInsets.only(bottom: 9),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(l, style: AppText.sans(12.5, w: FontWeight.w600, color: AppColors.inkSoft)),
-            Text(r,
-                style: AppText.sans(12.5,
-                    w: bold ? FontWeight.w800 : FontWeight.w700, color: rc ?? AppColors.ink)),
           ],
         ),
-      );
-
-  // Widget untuk menampilkan ringkasan item produk dan kalkulasi total harga
-  Widget _summarySection(CartProvider cart, int saveIdr, int originalIdr, int totalIdr) {
-    final items = cart.items;
-    final shown = items.take(3).toList(); // Hanya menampilkan maksimal 3 item pertama di ringkasan
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionTitle('Ringkasan'),
-        SectionCard(
-          child: Column(
-            children: [
-              for (final i in shown)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text('${i.quantity}× ${i.product.title}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppText.sans(12.5, w: FontWeight.w700)),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(rupiah(_idr(i.lineTotal)),
-                          style: AppText.sans(12.5, w: FontWeight.w700)),
-                    ],
-                  ),
-                ),
-              if (items.length > shown.length)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('dan ${items.length - shown.length} produk lainnya',
-                        style: AppText.sans(11.5, color: AppColors.ink3)),
-                  ),
-                ),
-              const Divider(color: AppColors.line, height: 18),
-              _line('Total Belanja', rupiah(originalIdr)),
-              if (saveIdr > 0)
-                _line('Hemat', '-${rupiah(saveIdr)}', rc: AppColors.mintDeep, bold: true),
-              _line('Biaya Pengiriman', 'Gratis', rc: AppColors.mintDeep, bold: true),
-              _line('Kode Unik', rupiah(_code)),
-              const Divider(color: AppColors.line, height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Total Pembayaran', style: AppText.serif(19)),
-                  Text(rupiah(totalIdr), style: AppText.serif(26, height: 1)),
-                ],
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 10, 6, 0),
-          child: Text(
-            'Harga dalam dolar dikonversi dengan kurs 1 USD = ${rupiah(PaymentConfig.usdToIdr)}. '
-            'Kode unik membantu penjual mencocokkan pembayaranmu.',
-            style: AppText.sans(11, color: AppColors.ink3, height: 1.5),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  // ---------- bar bawah ----------
+  Widget _sectionTitle(String t) => Text(t, style: AppText.serif(size: 22));
 
-  // Widget untuk membuat panel navigasi bawah (bottom navigation bar) tombol aksi pembayaran
-  Widget _bottomBar(BuildContext context, CartProvider cart, Address? address,
-      PaymentMethod? method, bool ready, int baseIdr, int totalIdr) {
-    // Menyesuaikan teks label tombol berdasarkan kelengkapan data checkout
-    final label = address == null
-        ? 'Pilih alamat dulu'
-        : method == null
-            ? 'Pilih metode pembayaran'
-            : 'Bayar dengan ${method.label}';
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xF7FFFAF6),
-        border: Border(top: BorderSide(color: AppColors.line)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
+  Widget _summary(CartProvider cart) {
+    Widget row(String l, Widget v) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
           child: Row(
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Total', style: AppText.sans(11, color: AppColors.inkSoft)),
-                  Text(rupiah(totalIdr), style: AppText.serif(24, height: 1.05)),
-                ],
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: GradientButton(
-                  label: label,
-                  expand: true,
-                  radius: 18,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  // Jika data siap (ready), arahkan ke halaman pembayaran (/payment) dengan membawa argumen lengkap
-                  onTap: ready
-                      ? () => context.push(
-                            '/payment',
-                            extra: PaymentArgs(
-                              method: method!,
-                              address: address!,
-                              itemCount: cart.totalQuantity,
-                              baseIdr: baseIdr,
-                              uniqueCode: _code,
-                            ),
-                          )
-                      : null, // Tombol disable jika belum lengkap
-                ),
-              ),
+              Expanded(child: Text(l, style: AppText.sans(size: 13, color: AppColors.inkSoft))),
+              v,
             ],
           ),
-        ),
+        );
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: AppColors.cardShadow,
+      ),
+      child: Column(
+        children: [
+          row('${cart.totalQuantity} barang', Text(money(cart.originalTotal), style: AppText.sans(weight: FontWeight.w700))),
+          if (cart.savings > 0.005)
+            row(
+              'Hemat diskon',
+              Text('- ${money(cart.savings)}',
+                  style: AppText.sans(weight: FontWeight.w800, color: const Color(0xFF3FA27F))),
+            ),
+          row('Ongkir', Text('Gratis', style: AppText.sans(weight: FontWeight.w800, color: const Color(0xFF3FA27F)))),
+          const Divider(height: 18, color: AppColors.lavender),
+          Row(
+            children: [
+              Expanded(child: Text('Total', style: AppText.serif(size: 21))),
+              Text(money(cart.total), style: AppText.sans(size: 19, weight: FontWeight.w800)),
+            ],
+          ),
+        ],
       ),
     );
   }
-}
 
-// Widget privat _MethodTile untuk mendesain kartu pilihan metode pembayaran
-class _MethodTile extends StatelessWidget {
-  final PaymentMethod method;
-  final bool selected;
-  final VoidCallback onTap;
-  const _MethodTile({required this.method, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      scale: .98,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: selected ? AppColors.accent : Colors.transparent,
-            width: 1.8,
+  Widget _addressForm() {
+    return Form(
+      key: _form,
+      child: Column(
+        children: [
+          AuthField(
+            controller: _name,
+            label: 'Nama penerima',
+            icon: Icons.person_outline_rounded,
+            textInputAction: TextInputAction.next,
+            validator: (v) => (v == null || v.trim().length < 2) ? 'Nama minimal 2 karakter' : null,
           ),
+          const SizedBox(height: 12),
+          AuthField(
+            controller: _phone,
+            label: 'Nomor telepon',
+            icon: Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.next,
+            validator: (v) =>
+                RegExp(r'^[0-9+\-\s]{8,20}$').hasMatch((v ?? '').trim()) ? null : 'Nomor telepon tidak valid',
+          ),
+          const SizedBox(height: 12),
+          AuthField(
+            controller: _address,
+            label: 'Alamat lengkap',
+            icon: Icons.location_on_outlined,
+            textInputAction: TextInputAction.done,
+            validator: (v) => (v == null || v.trim().length < 10) ? 'Alamat minimal 10 karakter' : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _methods() {
+    final out = <Widget>[];
+    String? group;
+    var i = 0;
+    for (final m in payMethods) {
+      if (m.group != group) {
+        group = m.group;
+        out.add(Padding(
+          padding: const EdgeInsets.only(top: 10, bottom: 6),
+          child: Text(
+            m.group.toUpperCase(),
+            style: AppText.sans(size: 10.5, weight: FontWeight.w800, color: AppColors.inkFaint, letterSpacing: 1.2),
+          ),
+        ));
+      }
+      out.add(Reveal(delayMs: 260 + i * 40, child: _methodTile(m)));
+      i++;
+    }
+    return out;
+  }
+
+  Widget _methodTile(PayMethod m) {
+    final selected = _method == m.code;
+    return Pressable(
+      scale: 0.98,
+      onTap: () => setState(() {
+        _method = m.code;
+        _methodError = false;
+      }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.lavender.o(0.55) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? AppColors.ink : Colors.transparent, width: 1.5),
           boxShadow: AppColors.softShadow,
         ),
         child: Row(
           children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: method.color,
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: Icon(method.icon, size: 24, color: AppColors.ink),
-            ),
+            PayLogo(m, size: 42),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(method.label, style: AppText.sans(14, w: FontWeight.w800)),
-                  const SizedBox(height: 2),
-                  Text(method.subtitle,
-                      style: AppText.sans(11.5, color: AppColors.inkSoft, height: 1.35)),
+                  Text(m.label, style: AppText.sans(size: 14, weight: FontWeight.w800)),
+                  Text(m.hint, style: AppText.sans(size: 11.5, color: AppColors.inkSoft)),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 280),
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: selected ? AppColors.gradient : null,
-                border: selected ? null : Border.all(color: AppColors.ink3, width: 1.5),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+              child: Icon(
+                selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                key: ValueKey(selected),
+                color: selected ? AppColors.ink : AppColors.inkFaint,
               ),
-              child: selected
-                  ? const Icon(Icons.check_rounded, size: 14, color: AppColors.ink)
-                  : null,
             ),
           ],
         ),
